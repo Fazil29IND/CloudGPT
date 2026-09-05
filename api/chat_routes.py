@@ -577,12 +577,21 @@ async def _retrieve_with_fallback(
     classification,
     settings,
     top_k_override: int | None = None,
+    expand_to_parents: bool = True,
 ) -> tuple[list, str]:
-    """Execute 3-pass retrieval sequence: strict -> provider -> global with async reranking."""
+    """Execute 3-pass retrieval sequence: strict -> provider -> global with async reranking and parent resolution."""
     retrieval_k = top_k_override or settings.retrieval_top_k
+    retrieve_args = {"expand_to_parents": expand_to_parents}
+
+    async def _safe_retrieve(filters):
+        try:
+            return await retriever.retrieve(query=query, top_k=retrieval_k, filters=filters, **retrieve_args)
+        except TypeError:
+            return await retriever.retrieve(query=query, top_k=retrieval_k, filters=filters)
+
     strict_f = _build_strict_filter(provider_filter, classification)
     if strict_f:
-        cands = await retriever.retrieve(query=query, top_k=retrieval_k, filters=strict_f)
+        cands = await _safe_retrieve(strict_f)
         if len(cands) >= 5:
             reranked = await asyncio.to_thread(
                 reranker.rerank, query=query, results=cands, top_k=settings.rerank_top_k
@@ -591,14 +600,14 @@ async def _retrieve_with_fallback(
 
     prov_f = _build_provider_filter(provider_filter, classification)
     if prov_f:
-        cands = await retriever.retrieve(query=query, top_k=retrieval_k, filters=prov_f)
+        cands = await _safe_retrieve(prov_f)
         if len(cands) >= 5:
             reranked = await asyncio.to_thread(
                 reranker.rerank, query=query, results=cands, top_k=settings.rerank_top_k
             )
             return reranked, "pass2_provider"
 
-    cands = await retriever.retrieve(query=query, top_k=retrieval_k, filters=None)
+    cands = await _safe_retrieve(None)
     if cands:
         reranked = await asyncio.to_thread(
             reranker.rerank, query=query, results=cands, top_k=settings.rerank_top_k
@@ -825,7 +834,9 @@ async def _gather_pipeline_context(
             for res in top_results:
                 m_data = res.metadata if hasattr(res, "metadata") else (res.get("metadata", {}) if isinstance(res, dict) else {})
                 txt = res.text if hasattr(res, "text") else (res.get("content", "") if isinstance(res, dict) else "")
+                cid = res.chunk_id if hasattr(res, "chunk_id") else (res.get("chunk_id", "") if isinstance(res, dict) else "")
                 results.append({
+                    "chunk_id": cid,
                     "provider": m_data.get("provider", "cloud"),
                     "service": m_data.get("service", ""),
                     "section": m_data.get("section", ""),
@@ -833,6 +844,9 @@ async def _gather_pipeline_context(
                     "content": txt,
                     "title": m_data.get("title", ""),
                     "stale": m_data.get("stale", False),
+                    "parent_chunk_id": m_data.get("parent_chunk_id"),
+                    "hierarchy_level": m_data.get("hierarchy_level", 1),
+                    "is_coalesced_parent": m_data.get("is_coalesced_parent", False),
                 })
             RAG_RESULTS_COUNT.observe(len(results))
         except asyncio.CancelledError:
@@ -1133,7 +1147,10 @@ async def execute_agent_pipeline(
     query_embedding: list[float] | None = None
     if _gate_candidate or _semcache_candidate:
         try:
-            query_embedding = await pipeline.get_embeddings().embed_query(query)
+            query_embedding = await asyncio.wait_for(
+                pipeline.get_embeddings().embed_query(query),
+                timeout=float(getattr(pipeline.settings, "embedding_timeout_seconds", 2.0)),
+            )
         except Exception as e:
             logger.warning("query_embedding.unavailable", error=str(e))
             query_embedding = None

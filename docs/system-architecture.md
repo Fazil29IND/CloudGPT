@@ -224,11 +224,11 @@ User Query
                  ▼
 ┌────────────────────────────────────────────────────────┐
 │ Stage 2: Dense Embedding Cosine Similarity Gate        │
-│ Embed query via BAAI/bge-small-en-v1.5                 │
-│ Cosine sim vs Canonical Utterances >= 0.92?           │
+│ Embed query via Gemini Embedding 2 (or BAAI fallback)   │
+│ Cosine sim vs Canonical Utterances >= 0.78 / 0.92?     │
 └───────────┬────────────────────────────────────────────┘
             ├── Yes ──► Fast Small-Talk Pipeline
-            └── No (or within 0.80 - 0.91 fail-open band)
+            └── No (or within fail-open band)
                  ▼
 ┌────────────────────────────────────────────────────────┐
 │ Stage 3: Semantic Cache Check                          │
@@ -245,7 +245,7 @@ User Query
 
 ### 4.1 Small-Talk Gate (`router/smalltalk_gate.py`)
 - **Layer 1 (Regex)**: Zero-latency deterministic evaluation matching social utterances (`hi`, `hello`, `thanks`, `bye`, `who are you`). Compound queries such as `"hi, what is S3 bucket versioning?"` fail the regex and safely pass to the full pipeline.
-- **Layer 2 (Embedding Cosine Gate)**: Uses the local `BAAI/bge-small-en-v1.5` embedder to compute cosine similarity against a canonical utterance list. A threshold of `0.92` catches paraphrase variations (`"greetings to the team"`), while scores below `0.91` fail open to prevent false positives.
+- **Layer 2 (Embedding Cosine Gate)**: Uses `Gemini Embedding 2` (`gemini-embedding-2`, falling back to local `BAAI/bge-small-en-v1.5` offline) to compute cosine similarity against a canonical utterance list. A calibrated threshold of `0.78` for Gemini (or `0.92` for local/mock) catches paraphrase variations (`"greetings to the team"`), while scores below the fail-open band (`0.70` for Gemini, `0.80` for local) pass directly to the full pipeline to prevent false positives.
 
 ### 4.2 Query Router (`router/query_router.py`)
 For complex queries, a dedicated lightweight sub-model (`gemini-3.5-flash` at temperature `0.0`) extracts structured metadata:
@@ -265,7 +265,7 @@ Combines dense vector similarity with sparse lexical matching using **Reciprocal
 
 $$RRF(d) = \sum_{m \in M} \frac{w_m}{k + r_m(d)}$$
 
-- **Dense Retriever (`retrieval/dense.py`)**: Queries Pinecone Serverless vector indexes populated with 384-dimensional embeddings from `BAAI/bge-small-en-v1.5`. Namespaces are segregated by corpus version (`services`, `senior-engineer-knowledge`, `troubleshooting-playbooks`, `iac-templates`).
+- **Dense Retriever (`retrieval/dense.py`)**: Queries Pinecone Serverless vector indexes populated with 384-dimensional MRL embeddings from `gemini-embedding-2` (configurable to 768 or 3072 dimensions). Namespaces are segregated by corpus version (`services`, `senior-engineer-knowledge`, `troubleshooting-playbooks`, `iac-templates`).
 - **Sparse Retriever (`retrieval/bm25.py`)**: In-memory BM25s index over tokenized cloud documentation chunks.
 - **Syntactic Dynamic Weighting**:
   - Natural Language Conceptual Queries: `w_dense = 0.7`, `w_sparse = 0.3`.

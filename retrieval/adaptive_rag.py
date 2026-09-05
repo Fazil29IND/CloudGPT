@@ -21,6 +21,7 @@ from typing import Any, AsyncGenerator
 import structlog
 
 from citations.citation_manager import CitationManager
+from chunking.hierarchical_store import HierarchicalChunkStore
 from config import get_settings
 from core.llm_cache import get_cached_retrieval_result, set_cached_retrieval_result
 from llm.provider import get_sub_model_provider
@@ -170,7 +171,12 @@ class AdaptiveAdvancedRAGPipeline:
         )[:4]
 
         tasks = [
-            retriever.retrieve(q, top_k=self.settings.retrieval_top_k, filters=provider_filter_dict)
+            retriever.retrieve(
+                q,
+                top_k=self.settings.retrieval_top_k,
+                filters=provider_filter_dict,
+                expand_to_parents=True,
+            )
             for q in query_strings
         ]
 
@@ -190,15 +196,27 @@ class AdaptiveAdvancedRAGPipeline:
                     limit=max(1, self.settings.retrieval_top_k // 2),
                     namespace=ns,
                 )
-                return [
-                    RetrievalResult(
-                        chunk_id=str(r.get("id", "")),
-                        text=r.get("metadata", {}).get("text", ""),
-                        score=max(0.0, min(1.0, float(r.get("score", 0.0)) * 0.8)),
-                        metadata={k: v for k, v in r.get("metadata", {}).items() if k != "text"},
+                store = HierarchicalChunkStore.get_instance()
+                hyde_results = []
+                for r in results:
+                    cid = str(r.get("id", ""))
+                    meta = {k: v for k, v in r.get("metadata", {}).items() if k != "text"}
+                    text = r.get("metadata", {}).get("text", "")
+                    parent = store.get_parent_chunk(cid)
+                    if parent:
+                        meta["parent_chunk_id"] = parent.parent_chunk_id
+                        meta["hierarchy_level"] = parent.hierarchy_level
+                        meta["is_coalesced_parent"] = True
+                        text = parent.content
+                    hyde_results.append(
+                        RetrievalResult(
+                            chunk_id=cid,
+                            text=text,
+                            score=max(0.0, min(1.0, float(r.get("score", 0.0)) * 0.8)),
+                            metadata=meta,
+                        )
                     )
-                    for r in results
-                ]
+                return hyde_results
             except asyncio.CancelledError:
                 raise
             except (TimeoutError, asyncio.TimeoutError):
@@ -288,13 +306,25 @@ class AdaptiveAdvancedRAGPipeline:
         return candidates, "adaptive_multi_query"
 
     def _compress_chunk(self, query: str, chunk: RetrievalResult) -> RetrievalResult:
-        """Extract the most query-relevant sentences from a high-scoring chunk."""
+        """Adaptive Hierarchical compression: extract query-relevant context or preserve tables/parents."""
         if chunk.score < RERANK_COMPRESS_THRESHOLD:
             chunk.metadata["compressed"] = False
             return chunk
 
         original_text = chunk.text
         original_len = len(original_text)
+
+        # 1. Table preservation: Never compress markdown tables
+        if chunk.metadata.get("is_table") or ("|" in original_text and "---" in original_text):
+            chunk.metadata["compressed"] = False
+            chunk.metadata["table_preserved"] = True
+            return chunk
+
+        # 2. Coalesced Parent Chunks: If parent contains broad section headers or architecture, retain
+        if chunk.metadata.get("is_coalesced_parent") and chunk.score >= 0.8:
+            chunk.metadata["compressed"] = False
+            chunk.metadata["parent_preserved"] = True
+            return chunk
 
         query_tokens = {
             t.lower() for t in query.split()
@@ -382,12 +412,16 @@ class AdaptiveAdvancedRAGPipeline:
 
         rag_results = [
             {
+                "chunk_id": c.chunk_id,
                 "provider": c.metadata.get("provider", "cloud"),
                 "service": c.metadata.get("service", ""),
                 "section": c.metadata.get("section", ""),
                 "url": c.metadata.get("url", ""),
                 "content": c.text,
                 "title": c.metadata.get("title", ""),
+                "parent_chunk_id": c.metadata.get("parent_chunk_id"),
+                "hierarchy_level": c.metadata.get("hierarchy_level", 1),
+                "is_coalesced_parent": c.metadata.get("is_coalesced_parent", False),
             }
             for c in compressed_chunks
         ]

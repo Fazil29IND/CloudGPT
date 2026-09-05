@@ -5,6 +5,12 @@ import pytest
 from api.chat_routes import PipelineResult, execute_agent_pipeline
 
 
+@pytest.fixture(autouse=True)
+def disable_smalltalk_gate_for_dispatch_tests():
+    with patch("router.smalltalk_gate.SmallTalkGate.is_smalltalk", AsyncMock(return_value=False)):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_free_tier_uses_current_rag_path():
     fake_context = (

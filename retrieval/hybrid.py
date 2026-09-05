@@ -111,6 +111,7 @@ class HybridRetriever:
         filters: dict | None = None,
         namespace: str | None = None,
         namespaces: list[str] | None = None,
+        expand_to_parents: bool = False,
     ) -> list[RetrievalResult]:
         """Concurrently query dense and sparse retrievers across target namespaces."""
         try:
@@ -221,7 +222,40 @@ class HybridRetriever:
                     url_seen[url] = r
                 deduped.append(r)
 
-            return deduped[:top_k]
+            final_results = deduped[:top_k]
+
+            if expand_to_parents:
+                from chunking.hierarchical_store import HierarchicalChunkStore
+                store = HierarchicalChunkStore.get_instance()
+                resolved_results: list[RetrievalResult] = []
+                seen_parent_ids: set[str] = set()
+
+                for r in final_results:
+                    parent = store.get_parent(r.chunk_id)
+                    if not parent and r.metadata.get("parent_chunk_id"):
+                        parent = store.get_chunk(r.metadata["parent_chunk_id"])
+
+                    if parent:
+                        if parent.chunk_id in seen_parent_ids:
+                            continue
+                        seen_parent_ids.add(parent.chunk_id)
+                        p_meta = parent.model_dump()
+                        p_meta.update({
+                            "resolved_from_child_id": r.chunk_id,
+                            "is_coalesced_parent": True,
+                        })
+                        resolved_results.append(RetrievalResult(
+                            chunk_id=parent.chunk_id,
+                            text=parent.text,
+                            score=r.score,
+                            metadata=p_meta,
+                        ))
+                    else:
+                        resolved_results.append(r)
+
+                return resolved_results
+
+            return final_results
 
         except (TimeoutError, asyncio.TimeoutError) as e:
             RAG_FALLBACK_TOTAL.labels(fallback_type="timeout").inc()

@@ -22,6 +22,7 @@ from typing import Any, AsyncGenerator
 import structlog
 
 from citations.citation_manager import CitationManager
+from chunking.hierarchical_store import HierarchicalChunkStore
 from config import get_settings
 from core.llm_cache import get_cached_retrieval_result, set_cached_retrieval_result
 from llm.provider import get_sub_model_provider
@@ -189,10 +190,22 @@ class AgenticRAGPipeline:
             prov_filter_dict = {"provider": aliases if len(aliases) > 1 else provider_filter.lower()}
 
         if retrieval_strategy == "multi-hop" and sub_queries:
-            tasks = [
-                retriever.retrieve(sq, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict)
-                for sq in sub_queries
-            ]
+            async def _retrieve_sq(sq_text: str):
+                try:
+                    return await retriever.retrieve(
+                        sq_text,
+                        top_k=self.settings.retrieval_top_k,
+                        filters=prov_filter_dict,
+                        expand_to_parents=True,
+                    )
+                except TypeError:
+                    return await retriever.retrieve(
+                        sq_text,
+                        top_k=self.settings.retrieval_top_k,
+                        filters=prov_filter_dict,
+                    )
+
+            tasks = [_retrieve_sq(sq) for sq in sub_queries]
             all_batches = await asyncio.gather(*tasks, return_exceptions=True)
 
             merged: dict[str, RetrievalResult] = {}
@@ -231,7 +244,8 @@ class AgenticRAGPipeline:
                 top_results, fallback_pass = await asyncio.wait_for(
                     _retrieve_with_fallback(
                         retriever, reranker, query, provider_filter,
-                        classification, self.settings
+                        classification, self.settings,
+                        expand_to_parents=True,
                     ),
                     timeout=budget,
                 )
@@ -389,6 +403,58 @@ class AgenticRAGPipeline:
             RAG_STAGE_DURATION_SECONDS.labels(stage="grade_evidence", tier=tier).observe(elapsed)
             return chunks
 
+    def _expand_hierarchical_context(
+        self,
+        chunks: list[RetrievalResult],
+        max_expansions: int = 4,
+    ) -> list[RetrievalResult]:
+        """Navigate hierarchical parent-child relationships to enrich top evidence.
+
+        If a child chunk has high evidence grade score, verify parent resolution.
+        If a parent chunk is highly relevant, attach key child/sibling details
+        from HierarchicalChunkStore if available.
+        """
+        if not chunks:
+            return chunks
+
+        store = HierarchicalChunkStore.get_instance()
+        enriched: list[RetrievalResult] = []
+        seen_ids = set()
+
+        expansions = 0
+        for chunk in chunks:
+            if chunk.chunk_id in seen_ids:
+                continue
+            seen_ids.add(chunk.chunk_id)
+            enriched.append(chunk)
+
+            # If this is a high-confidence chunk, check for sibling/child enrichment
+            score = float(chunk.metadata.get("grade_score", chunk.score))
+            if score >= 0.6 and expansions < max_expansions:
+                siblings = store.get_sibling_chunks(chunk.chunk_id)
+                for sib in siblings:
+                    if sib.chunk_id not in seen_ids and expansions < max_expansions:
+                        seen_ids.add(sib.chunk_id)
+                        sib_result = RetrievalResult(
+                            chunk_id=sib.chunk_id,
+                            text=sib.content,
+                            score=chunk.score * 0.9,
+                            metadata={
+                                **sib.metadata,
+                                "service": sib.service,
+                                "provider": sib.provider,
+                                "section": sib.section,
+                                "parent_chunk_id": sib.parent_chunk_id,
+                                "hierarchy_level": sib.hierarchy_level,
+                                "hierarchical_expanded": True,
+                                "grade_score": score * 0.9,
+                            },
+                        )
+                        enriched.append(sib_result)
+                        expansions += 1
+
+        return enriched
+
     async def _generate_and_verify(
         self,
         query: str,
@@ -413,12 +479,16 @@ class AgenticRAGPipeline:
 
         rag_results = [
             {
+                "chunk_id": chunk.chunk_id,
                 "provider": chunk.metadata.get("provider", "cloud"),
                 "service": chunk.metadata.get("service", ""),
                 "section": chunk.metadata.get("section", ""),
                 "url": chunk.metadata.get("url", ""),
                 "content": chunk.text,
                 "title": chunk.metadata.get("title", ""),
+                "parent_chunk_id": chunk.metadata.get("parent_chunk_id"),
+                "hierarchy_level": chunk.metadata.get("hierarchy_level", 1),
+                "is_coalesced_parent": chunk.metadata.get("is_coalesced_parent", False),
             }
             for chunk in graded_chunks
         ]
@@ -771,6 +841,7 @@ class AgenticRAGPipeline:
 
         t0_grade = time.perf_counter()
         graded_chunks = await self._grade_evidence(query, chunks, tier)
+        graded_chunks = self._expand_hierarchical_context(graded_chunks)
         timings["grade_evidence"] = round((time.perf_counter() - t0_grade) * 1000, 2)
 
         if emit_event and getattr(self.settings, "enable_structured_stage_events", True):

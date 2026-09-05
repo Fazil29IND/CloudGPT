@@ -90,7 +90,7 @@ sequenceDiagram
 2. **Deterministic Context Validation**: `ContextValidator` inspects the raw user query and file attachments for prompt injection vectors and scrubs any embedded cloud credentials (AWS `AKIA`, GCP service account keys, connection strings) before passing the input downstream.
 3. **Multi-Stage Gating**:
    - **Layer 1 Regex Gate**: Checks for immediate social matches (`"hello"`, `"thank you"`). If detected, it circumvents retrieval entirely.
-   - **Layer 2 Embedding Cosine Gate**: Computes cosine similarity of query embedding against canonical greetings via `BAAI/bge-small-en-v1.5`.
+   - **Layer 2 Embedding Cosine Gate**: Computes cosine similarity of query embedding against canonical greetings via `Gemini Embedding 2` (`gemini-embedding-2`, with fallback to `BAAI/bge-small-en-v1.5` offline).
    - **Semantic Cache Check**: If cosine similarity against a cached query embedding exceeds intent-specific thresholds (e.g., 0.95 for pricing, 0.90 for conceptual), the cached answer is streamed immediately.
 4. **Single-Flight Lock**: To prevent cache stampedes and duplicated LLM costs when multiple clients submit identical queries simultaneously, a distributed Redis mutex (`single_flight_lock:{query_hash}`) ensures only one pipeline execution proceeds; subsequent requests wait and stream the produced response.
 5. **Router & Gating**: Query classification extracts cloud providers (`aws`, `gcp`, `azure`), target services, and operational routes (`RAG`, `PRICING`, `CALCULATOR`, `WEB`).
