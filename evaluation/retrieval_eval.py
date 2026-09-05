@@ -27,7 +27,7 @@ from retrieval.reranker import Reranker
 logger = logging.getLogger("evaluation.retrieval_eval")
 
 
-async def evaluate_alphas(alphas: list[float] | None = None) -> dict:
+async def evaluate_alphas(alphas: list[float] | None = None, limit: int | None = None) -> dict:
     if alphas is None:
         alphas = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
 
@@ -38,6 +38,9 @@ async def evaluate_alphas(alphas: list[float] | None = None) -> dict:
 
     with open(golden_path, "r", encoding="utf-8") as f:
         golden_set = json.load(f)
+
+    if limit is not None and limit > 0:
+        golden_set = golden_set[:limit]
 
     settings = get_settings()
     embed_engine = EmbeddingEngine(
@@ -95,7 +98,13 @@ async def evaluate_alphas(alphas: list[float] | None = None) -> dict:
 
 
 def main() -> None:
-    results = asyncio.run(evaluate_alphas())
+    import argparse
+    parser = argparse.ArgumentParser(description="CloudGPT Retrieval Alpha Tuning Evaluation")
+    parser.add_argument("--alphas", nargs="+", type=float, default=None, help="Specific alphas to evaluate, e.g. 0.3 0.7")
+    parser.add_argument("--limit", type=int, default=None, help="Limit number of golden set questions to evaluate")
+    args = parser.parse_args()
+
+    results = asyncio.run(evaluate_alphas(alphas=args.alphas, limit=args.limit))
     print("\n" + "=" * 55)
     print("RETRIEVAL EVALUATION RESULTS (ALPHA TUNING)")
     print("=" * 55)
