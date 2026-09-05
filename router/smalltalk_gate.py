@@ -149,8 +149,13 @@ class SmallTalkGate:
         if query_embedding is None or self._embedder is None:
             return False
 
-        threshold = float(getattr(self.settings, "smalltalk_similarity_threshold", 0.92))
-        fail_open_band = float(getattr(self.settings, "smalltalk_failopen_band", 0.80))
+        provider = getattr(self._embedder, "provider", None)
+        if provider and str(provider).lower() in ("gemini", "google"):
+            threshold = float(getattr(self.settings, "smalltalk_gemini_similarity_threshold", 0.78))
+            fail_open_band = float(getattr(self.settings, "smalltalk_gemini_failopen_band", 0.70))
+        else:
+            threshold = float(getattr(self.settings, "smalltalk_similarity_threshold", 0.92))
+            fail_open_band = float(getattr(self.settings, "smalltalk_failopen_band", 0.80))
 
         try:
             best = 0.0
@@ -174,6 +179,9 @@ class SmallTalkGate:
         utterances = _load_utterances(self.settings)
         vectors: list[list[float]] = []
         for utterance in utterances:
-            vectors.append(await self._embedder.embed_query(utterance))
+            if hasattr(self._embedder, "embed_similarity"):
+                vectors.append(await self._embedder.embed_similarity(utterance))
+            else:
+                vectors.append(await self._embedder.embed_query(utterance))
         self._canonical_vectors = vectors
         return vectors

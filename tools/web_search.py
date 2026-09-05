@@ -1,6 +1,9 @@
 import asyncio
 import logging
+import re
+from urllib.parse import parse_qs, urlparse, unquote
 
+from bs4 import BeautifulSoup
 import httpx
 from pydantic import BaseModel
 
@@ -60,13 +63,13 @@ class WebSearchTool:
         if self.searxng_url:
             results = await self._searxng_search(query, max_results, domains)
             if not results and self.settings.duckduckgo_fallback:
-                results = await self._duckduckgo_search(query, max_results)
+                results = await self._duckduckgo_search(query, max_results, domains)
         elif self.api_key:
             results = await self._tavily_search(query, max_results, domains)
             if not results and self.settings.duckduckgo_fallback:
-                results = await self._duckduckgo_search(query, max_results)
+                results = await self._duckduckgo_search(query, max_results, domains)
         elif self.settings.duckduckgo_fallback:
-            results = await self._duckduckgo_search(query, max_results)
+            results = await self._duckduckgo_search(query, max_results, domains)
         else:
             logger.warning("No web search provider available. Set SEARXNG_URL or enable DUCKDUCKGO_FALLBACK.")
 
@@ -162,35 +165,125 @@ class WebSearchTool:
             logger.error(f"Tavily search failed: {e}")
             return []
 
-    async def _duckduckgo_search(
-        self, query: str, max_results: int = 5
+    async def _duckduckgo_direct_search(
+        self, query: str, max_results: int = 5, domains: list[str] | None = None
     ) -> list[WebSearchResult]:
-        """Fallback web search using DuckDuckGo (free, no API key required)."""
+        """Perform a direct, zero-dependency metasearch against DuckDuckGo HTML endpoint.
+
+        Resilient, open-source, and free: requires no API keys and is immune to
+        upstream Python library deprecations or breaking changes.
+        """
+        search_query = query
+        if domains:
+            site_filter = " OR ".join(f"site:{d}" for d in domains)
+            search_query = f"{query} ({site_filter})"
+
+        endpoint = getattr(
+            self.settings,
+            "duckduckgo_html_endpoint",
+            "https://html.duckduckgo.com/html/",
+        )
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://duckduckgo.com/",
+        }
+
+        timeout = float(getattr(self.settings, "web_search_timeout_seconds", 5.0))
         try:
-            from duckduckgo_search import DDGS
+            client = _get_http_client()
+            response = await client.post(endpoint, data={"q": search_query}, headers=headers, timeout=timeout)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, "html.parser")
+            results: list[WebSearchResult] = []
+            for i, item in enumerate(soup.select(".result")):
+                a = item.select_one(".result__title a") or item.select_one("h2 a")
+                if not a:
+                    continue
+                raw_href = a.get("href", "")
+                if not raw_href or "duckduckgo.com/feedback" in raw_href:
+                    continue
+
+                clean_url = raw_href
+                if "uddg=" in raw_href:
+                    try:
+                        parsed = parse_qs(urlparse(raw_href).query)
+                        clean_url = unquote(parsed.get("uddg", [raw_href])[0])
+                    except Exception:
+                        clean_url = raw_href
+
+                title = re.sub(r"\s+", " ", a.get_text(" ", strip=True))
+                s = item.select_one(".result__snippet")
+                snippet = re.sub(r"\s+", " ", s.get_text(" ", strip=True)) if s else ""
+
+                results.append(
+                    WebSearchResult(
+                        title=title,
+                        url=clean_url,
+                        content=snippet,
+                        score=round(max(0.1, 1.0 - (i * 0.1)), 2),
+                        source_engine="duckduckgo",
+                    )
+                )
+                if len(results) >= max_results:
+                    break
+
+            if results:
+                logger.info(f"Direct DuckDuckGo HTML search returned {len(results)} results for: {query[:80]}")
+            return results
+        except Exception as e:
+            logger.warning(f"Direct DuckDuckGo search failed ({e}), trying library fallback")
+            return []
+
+    async def _duckduckgo_search(
+        self, query: str, max_results: int = 5, domains: list[str] | None = None
+    ) -> list[WebSearchResult]:
+        """Fallback web search using direct DuckDuckGo HTML metasearch with DDGS library fallback."""
+        # Tier 1: Direct resilient DuckDuckGo HTML parser
+        if getattr(self.settings, "duckduckgo_direct_search", True):
+            direct_results = await self._duckduckgo_direct_search(query, max_results, domains)
+            if direct_results:
+                return direct_results
+
+        # Tier 2: Library fallback (ddgs or duckduckgo_search)
+        search_query = query
+        if domains:
+            site_filter = " OR ".join(f"site:{d}" for d in domains)
+            search_query = f"{query} ({site_filter})"
+
+        try:
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
 
             ddgs = DDGS()
-            raw_results = await asyncio.to_thread(ddgs.text, query, max_results=max_results)
+            raw_results = await asyncio.to_thread(ddgs.text, search_query, max_results=max_results)
 
             results = []
-            for i, res in enumerate(raw_results):
+            for i, res in enumerate(raw_results or []):
                 results.append(
                     WebSearchResult(
                         title=res.get("title", ""),
                         url=res.get("href", res.get("link", "")),
                         content=res.get("body", res.get("snippet", "")),
-                        score=round(1.0 - (i * 0.1), 2),
+                        score=round(max(0.1, 1.0 - (i * 0.1)), 2),
                         source_engine="duckduckgo",
                     )
                 )
-            logger.info(f"DuckDuckGo returned {len(results)} results for: {query[:80]}")
-            return results
-        except ImportError:
-            logger.error("duckduckgo-search package not installed. Run: pip install duckduckgo-search")
-            return []
+            if results:
+                logger.info(f"DDGS returned {len(results)} results for: {query[:80]}")
+                return results
         except Exception as e:
-            logger.error(f"DuckDuckGo search failed: {e}")
-            return []
+            logger.debug(f"DDGS library search failed: {e}")
+
+        return []
 
     async def search_for_problem_solving(
         self, query: str, max_results: int = 5

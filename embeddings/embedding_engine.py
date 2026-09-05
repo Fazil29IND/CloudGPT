@@ -4,57 +4,98 @@ import math
 import re
 import zlib
 from pathlib import Path
+from typing import Any
 
 from config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
+def _l2_norm(vec: list[float]) -> list[float]:
+    """Ensure vector is L2-normalized to unit length for metric equality."""
+    if not vec:
+        return []
+    sq = sum(x * x for x in vec)
+    if sq == 0.0 or abs(sq - 1.0) < 1e-6:
+        return vec
+    inv = 1.0 / math.sqrt(sq)
+    return [x * inv for x in vec]
+
+
 class EmbeddingEngine:
     def __init__(
         self,
-        provider: str = 'local',
-        model_name: str = 'BAAI/bge-small-en-v1.5',
-        dimension: int = 384,
+        provider: str | None = None,
+        model_name: str | None = None,
+        dimension: int | None = None,
     ) -> None:
-        self.provider = provider
-        self.model_name = model_name
-        self.dimension = dimension
+        settings = get_settings()
+        self.provider = (provider or getattr(settings, "embedding_provider", "gemini")).lower()
+        self.model_name = model_name or getattr(settings, "embedding_model", "gemini-embedding-2")
+        self.dimension = dimension if dimension is not None else getattr(settings, "embedding_dimension", 384)
         self.model = None
+        self._is_gemini = False
         self._is_fastembed = False
         self._batch_size = 32
+        self._semaphore = asyncio.Semaphore(10)
         self._bm25_retriever = None
         self._bm25_vocab_size = 30_000
+
+    def _load_local_model(self) -> None:
+        """Load local FastEmbed ONNX or SentenceTransformers fallback."""
+        try:
+            from fastembed import TextEmbedding
+            self.model = TextEmbedding(model_name=self.model_name)
+            self._is_fastembed = True
+            logger.info(f"FastEmbed ONNX model loaded: {self.model_name}")
+            return
+        except (ImportError, RuntimeError, OSError) as e:
+            logger.warning(f"FastEmbed load failed ({e}), trying sentence_transformers")
+        except Exception as e:
+            logger.warning(f"FastEmbed unexpected load failure ({e}), trying sentence_transformers")
+
+        try:
+            from sentence_transformers import SentenceTransformer
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.model = SentenceTransformer(self.model_name, device=device)
+            self._is_fastembed = False
+            logger.info(f"SentenceTransformer loaded: {self.model_name} on {device}")
+        except (ImportError, RuntimeError, OSError) as e2:
+            logger.error(f"Failed to load embedding model with sentence_transformers: {e2}")
+            raise
+        except Exception as e2:
+            logger.error(f"Unexpected error loading embedding model with sentence_transformers: {e2}")
+            raise
 
     def _load_model(self) -> None:
         if self.model is not None:
             return
 
         logger.info(f"Loading embedding model: {self.model_name} (provider={self.provider})")
-        if self.provider in ('local', 'fastembed'):
-            try:
-                from fastembed import TextEmbedding
-                self.model = TextEmbedding(model_name=self.model_name)
-                self._is_fastembed = True
-                logger.info(f"FastEmbed ONNX model loaded: {self.model_name}")
+        if self.provider in ('gemini', 'google'):
+            settings = get_settings()
+            if not getattr(settings, "gemini_api_key", None):
+                logger.warning("GEMINI_API_KEY missing, falling back to local BAAI embedder for offline/testing")
+                self.provider = 'local'
+                self.model_name = 'BAAI/bge-small-en-v1.5'
+                self._load_local_model()
                 return
-            except (ImportError, RuntimeError, OSError) as e:
-                logger.warning(f"FastEmbed load failed ({e}), trying sentence_transformers")
-            except Exception as e:
-                logger.warning(f"FastEmbed unexpected load failure ({e}), trying sentence_transformers")
 
             try:
-                from sentence_transformers import SentenceTransformer
-                import torch
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                self.model = SentenceTransformer(self.model_name, device=device)
-                self._is_fastembed = False
-            except (ImportError, RuntimeError, OSError) as e2:
-                logger.error(f"Failed to load embedding model with sentence_transformers: {e2}")
-                raise
-            except Exception as e2:
-                logger.error(f"Unexpected error loading embedding model with sentence_transformers: {e2}")
-                raise
+                from google import genai
+                self.model = genai.Client(api_key=settings.gemini_api_key)
+                self._is_gemini = True
+                logger.info("Google GenAI embedding client loaded: model=%s (dim=%d)", self.model_name, self.dimension)
+                return
+            except Exception as e:
+                logger.warning("Failed to initialize Google GenAI embedding client (%s), falling back to local", e)
+                self.provider = 'local'
+                self.model_name = 'BAAI/bge-small-en-v1.5'
+                self._load_local_model()
+                return
+        elif self.provider in ('local', 'fastembed'):
+            self._load_local_model()
         elif self.provider == 'openai':
             from openai import AsyncOpenAI
             settings = get_settings()
@@ -64,13 +105,65 @@ class EmbeddingEngine:
         else:
             raise ValueError(f"Unknown embedding provider: {self.provider}")
 
-    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+    async def _call_gemini_embed(self, contents: Any, task_type: str) -> list[list[float]]:
+        """Execute Gemini embedding call with rate limit retry, exponential backoff, and model fallback."""
+        from google.genai import types
+        config = types.EmbedContentConfig(
+            task_type=task_type,
+            output_dimensionality=self.dimension,
+        )
+        models_to_try = [self.model_name]
+        if "gemini-embedding-001" not in models_to_try:
+            models_to_try.append("gemini-embedding-001")
+
+        last_err = None
+        for model_id in models_to_try:
+            for attempt in range(3):
+                try:
+                    async with self._semaphore:
+                        response = await self.model.aio.models.embed_content(
+                            model=model_id,
+                            contents=contents,
+                            config=config,
+                        )
+                        if response and response.embeddings:
+                            return [_l2_norm(emb.values) for emb in response.embeddings]
+                        return []
+                except Exception as exc:
+                    last_err = exc
+                    err_text = str(exc).lower()
+                    is_rate_limit = "429" in err_text or "resource_exhausted" in err_text or "quota" in err_text
+                    is_transient = "503" in err_text or "unavailable" in err_text or "timeout" in err_text
+                    if (is_rate_limit or is_transient) and attempt < 2:
+                        backoff = (2 ** attempt) * 0.5 + 0.1
+                        logger.warning("Gemini embedding retry attempt %d after %.2fs due to: %s", attempt + 1, backoff, exc)
+                        await asyncio.sleep(backoff)
+                    elif "not found" in err_text or "404" in err_text:
+                        logger.warning("Model %s not found for embedding, trying fallback model", model_id)
+                        break
+                    else:
+                        break
+
+        logger.error("All Gemini embedding attempts failed: %s", last_err)
+        raise last_err
+
+    async def embed_texts(self, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
         if not texts:
             return []
 
         self._load_model()
 
-        if self.provider in ('local', 'fastembed') and self._is_fastembed:
+        if self.provider in ('gemini', 'google') and self._is_gemini:
+            from google.genai import types
+            embeddings: list[list[float]] = []
+            batch_size = 50
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i : i + batch_size]
+                contents = [types.Content(parts=[types.Part.from_text(text=t)]) for t in batch]
+                batch_vectors = await self._call_gemini_embed(contents, task_type=task_type)
+                embeddings.extend(batch_vectors)
+            return embeddings
+        elif self.provider in ('local', 'fastembed') and self._is_fastembed:
             embeddings = list(await asyncio.to_thread(lambda: list(self.model.embed(texts, batch_size=64))))
             return [e.tolist() if hasattr(e, "tolist") else list(e) for e in embeddings]
         elif self.provider == 'local':
@@ -91,9 +184,22 @@ class EmbeddingEngine:
         return []
 
     async def embed_query(self, query: str) -> list[float]:
+        self._load_model()
+        if self.provider in ('gemini', 'google') and self._is_gemini:
+            vecs = await self._call_gemini_embed(query, task_type="RETRIEVAL_QUERY")
+            return vecs[0] if vecs else []
+
         prefix = "search_query: " if "bge" in self.model_name.lower() else ""
         embeddings = await self.embed_texts([f"{prefix}{query}"])
         return embeddings[0] if embeddings else []
+
+    async def embed_similarity(self, text: str) -> list[float]:
+        """Embed text for symmetric semantic similarity (e.g. cosine gate, semantic cache)."""
+        self._load_model()
+        if self.provider in ('gemini', 'google') and self._is_gemini:
+            vecs = await self._call_gemini_embed(text, task_type="SEMANTIC_SIMILARITY")
+            return vecs[0] if vecs else []
+        return await self.embed_query(text)
 
     def _load_or_init_bm25(self, corpus_texts: list[str] | None = None) -> None:
         """Load saved BM25 index from data/bm25_index/ or fit on corpus_texts."""

@@ -59,6 +59,7 @@ anthropic>=0.42
 # === Web Search ===
 tavily-python>=0.5
 duckduckgo-search>=7.0
+ddgs>=9.16.0
 
 # === Cloud SDKs ===
 boto3>=1.35

@@ -437,7 +437,13 @@ def build_knowledge_chunks(knowledge_dir: Path) -> dict[str, list[dict[str, Any]
     return by_namespace
 
 
-async def ingest_services_rag(dry_run: bool = False, corpus_version: str | None = None) -> dict[str, Any]:
+async def ingest_services_rag(
+    dry_run: bool = False,
+    corpus_version: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    dimension: int | None = None,
+) -> dict[str, Any]:
     """Run full idempotent ingestion of Services.Md into Pinecone RAG vector database."""
     settings = get_settings()
     if corpus_version:
@@ -495,9 +501,9 @@ async def ingest_services_rag(dry_run: bool = False, corpus_version: str | None 
 
     logger.info("Fitting BM25S lexical index on %d total texts...", len(all_texts))
     embedding_engine = EmbeddingEngine(
-        provider=settings.embedding_provider,
-        model_name=settings.embedding_model,
-        dimension=settings.embedding_dimension,
+        provider=provider or settings.embedding_provider,
+        model_name=model or settings.embedding_model,
+        dimension=dimension if dimension is not None else settings.embedding_dimension,
     )
     embedding_engine.fit_bm25(all_texts)
 
@@ -587,9 +593,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="CloudGPT Services.Md Ingestion CLI")
     parser.add_argument("--dry-run", action="store_true", help="Chunk and print stats without vector DB upserts")
     parser.add_argument("--corpus-version", type=str, default=None, help="Target Pinecone corpus version (e.g. v2)")
+    parser.add_argument("--provider", type=str, default=None, help="Embedding provider: gemini | local")
+    parser.add_argument("--model", type=str, default=None, help="Embedding model name (e.g. gemini-embedding-2)")
+    parser.add_argument("--dimension", type=int, default=None, help="Embedding dimension (e.g. 384 or 768)")
     args = parser.parse_args()
 
-    result = asyncio.run(ingest_services_rag(dry_run=args.dry_run, corpus_version=args.corpus_version))
+    result = asyncio.run(ingest_services_rag(
+        dry_run=args.dry_run,
+        corpus_version=args.corpus_version,
+        provider=args.provider,
+        model=args.model,
+        dimension=args.dimension,
+    ))
     print("\n" + "=" * 60)
     print("INGESTION OPERATION COMPLETED")
     print("=" * 60)

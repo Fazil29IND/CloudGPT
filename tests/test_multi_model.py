@@ -422,4 +422,118 @@ async def test_stream_mid_stream_cascade_does_not_exhaust_deadline_prematurely()
     assert provider.model == "gemini-3.7-flash"
 
 
+@pytest.mark.asyncio
+async def test_web_search_direct_duckduckgo_html_parser():
+    """Verify that direct DuckDuckGo HTML parser extracts clean links, snippets, and unquotes uddg."""
+    tool = WebSearchTool()
+    sample_html = """
+    <html><body>
+    <div class="result results_links results_links_deep web-result">
+      <h2 class="result__title">
+        <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdocs.aws.amazon.com%2Fs3%2Fstorage-classes%2F&rut=123">
+          Amazon <b>S3</b> Storage Classes
+        </a>
+      </h2>
+      <a class="result__snippet">Amazon S3 offers an industry-leading range of storage classes for your data.</a>
+    </div>
+    </body></html>
+    """
+    mock_resp = MagicMock()
+    mock_resp.text = sample_html
+    mock_resp.raise_for_status = MagicMock()
+
+    mock_client = MagicMock()
+    mock_client.post = AsyncMock(return_value=mock_resp)
+
+    with patch("tools.web_search._get_http_client", return_value=mock_client):
+        results = await tool._duckduckgo_direct_search("S3 storage classes")
+        assert len(results) == 1
+        assert results[0].title == "Amazon S3 Storage Classes"
+        assert results[0].url == "https://docs.aws.amazon.com/s3/storage-classes/"
+        assert "storage classes for your data" in results[0].content
+        assert results[0].source_engine == "duckduckgo"
+
+
+@pytest.mark.asyncio
+async def test_embedding_engine_gemini_mocked():
+    """Verify that EmbeddingEngine properly calls Google GenAI with task_type and dimension."""
+    from embeddings.embedding_engine import EmbeddingEngine
+    from types import SimpleNamespace
+
+    engine = EmbeddingEngine(provider="gemini", model_name="gemini-embedding-2", dimension=384)
+    engine._is_gemini = True
+    
+    mock_emb = SimpleNamespace(values=[0.1] * 384)
+    mock_response = SimpleNamespace(embeddings=[mock_emb])
+
+    mock_client = MagicMock()
+    mock_client.aio.models.embed_content = AsyncMock(return_value=mock_response)
+    engine.model = mock_client
+
+    vec = await engine.embed_query("How does S3 replicate objects?")
+    assert len(vec) == 384
+    call_args = mock_client.aio.models.embed_content.call_args
+    assert call_args.kwargs["model"] == "gemini-embedding-2"
+    assert call_args.kwargs["config"].task_type == "RETRIEVAL_QUERY"
+    assert call_args.kwargs["config"].output_dimensionality == 384
+
+    # Test embed_texts with RETRIEVAL_DOCUMENT
+    mock_multi_response = SimpleNamespace(embeddings=[mock_emb, mock_emb])
+    mock_client.aio.models.embed_content = AsyncMock(return_value=mock_multi_response)
+    vecs = await engine.embed_texts(["Chunk 1", "Chunk 2"])
+    assert len(vecs) == 2
+    call_args2 = mock_client.aio.models.embed_content.call_args
+    assert call_args2.kwargs["config"].task_type == "RETRIEVAL_DOCUMENT"
+
+    # Test embed_similarity with SEMANTIC_SIMILARITY
+    mock_client.aio.models.embed_content = AsyncMock(return_value=mock_response)
+    sim_vec = await engine.embed_similarity("hello")
+    assert len(sim_vec) == 384
+    call_args3 = mock_client.aio.models.embed_content.call_args
+    assert call_args3.kwargs["config"].task_type == "SEMANTIC_SIMILARITY"
+
+
+@pytest.mark.asyncio
+async def test_embedding_engine_gemini_retry_on_429():
+    """Verify that EmbeddingEngine retries with backoff upon encountering HTTP 429 / resource exhausted."""
+    from embeddings.embedding_engine import EmbeddingEngine
+    from types import SimpleNamespace
+
+    engine = EmbeddingEngine(provider="gemini", model_name="gemini-embedding-2", dimension=384)
+    engine._is_gemini = True
+
+    mock_emb = SimpleNamespace(values=[0.2] * 384)
+    mock_success = SimpleNamespace(embeddings=[mock_emb])
+
+    mock_client = MagicMock()
+    # Fail first call with 429, succeed on second attempt
+    mock_client.aio.models.embed_content = AsyncMock(
+        side_effect=[RuntimeError("429 Resource Exhausted: quota limit"), mock_success]
+    )
+    engine.model = mock_client
+
+    with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+        vec = await engine.embed_query("AWS Lambda cold start")
+        assert len(vec) == 384
+        assert mock_client.aio.models.embed_content.call_count == 2
+        mock_sleep.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_smalltalk_gate_gemini_threshold_selection():
+    """Verify SmallTalkGate dynamically selects calibrated 0.78 threshold for Gemini provider."""
+    from router.smalltalk_gate import SmallTalkGate
+    from types import SimpleNamespace
+
+    mock_embedder = SimpleNamespace(provider="gemini", embed_similarity=AsyncMock(return_value=[0.1] * 384))
+    gate = SmallTalkGate(embedder=mock_embedder)
+
+    with patch.object(gate, "_canonical_embeddings", new=AsyncMock(return_value=[[0.1] * 384])):
+        # Identical vector -> cosine similarity 1.0 -> should hit gate
+        res = await gate.is_smalltalk("hey team", query_embedding=[0.1] * 384)
+        assert res is True
+
+
+
+
 

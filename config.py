@@ -438,15 +438,16 @@ class Settings(BaseSettings):
 
     # ── Embedding ───────────────────────────────────────────────────────
     embedding_provider: str = Field(
-        default="local",
-        description="Embedding provider: local | openai | voyage",
+        default="gemini",
+        description="Embedding provider: gemini | local | openai | voyage",
     )
     embedding_model: str = Field(
-        default="BAAI/bge-small-en-v1.5",
-        description="Embedding model name (local fastembed or API model)",
+        default="gemini-embedding-2",
+        description="Embedding model name (e.g. gemini-embedding-2, gemini-embedding-001, BAAI/bge-small-en-v1.5)",
     )
     embedding_dimension: int = Field(
-        default=384, description="Embedding vector dimension"
+        default=384,
+        description="Embedding vector dimension (384 for drop-in Pinecone compatibility, or 768 / 1536 / 3072 via MRL)",
     )
 
     # ── Pinecone ────────────────────────────────────────────────────────
@@ -591,6 +592,19 @@ class Settings(BaseSettings):
         le=1.0,
         description="Fail-open band floor: cosine scores between this and the "
                     "smalltalk_similarity_threshold fall through to the normal pipeline.",
+    )
+    smalltalk_gemini_similarity_threshold: float = Field(
+        default=0.78,
+        ge=0.0,
+        le=1.0,
+        description="Cosine similarity vs canonical utterances for Layer 2 gate when using Gemini embeddings "
+                    "(calibrated: greetings >= 0.80, technical queries <= 0.60).",
+    )
+    smalltalk_gemini_failopen_band: float = Field(
+        default=0.70,
+        ge=0.0,
+        le=1.0,
+        description="Fail-open band floor for Gemini embeddings.",
     )
     smalltalk_utterances_override: str | None = Field(
         default=None,
@@ -819,6 +833,14 @@ class Settings(BaseSettings):
         default=True,
         description="Use DuckDuckGo as fallback when SearXNG is unavailable",
     )
+    duckduckgo_direct_search: bool = Field(
+        default=True,
+        description="Use native resilient direct DuckDuckGo HTML/Lite parser without external dependency failures",
+    )
+    duckduckgo_html_endpoint: str = Field(
+        default="https://html.duckduckgo.com/html/",
+        description="Direct DuckDuckGo HTML search endpoint",
+    )
     web_search_timeout_seconds: float = Field(
         default=5.0,
         description="Timeout in seconds for external web search queries",
@@ -901,7 +923,7 @@ class Settings(BaseSettings):
     @field_validator("embedding_provider")
     @classmethod
     def validate_embedding_provider(cls, v: str) -> str:
-        allowed = {"local", "openai", "voyage"}
+        allowed = {"gemini", "google", "local", "openai", "voyage"}
         if v.lower() not in allowed:
             raise ValueError(f"embedding_provider must be one of {allowed}, got '{v}'")
         return v.lower()
