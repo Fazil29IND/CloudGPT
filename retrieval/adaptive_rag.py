@@ -12,6 +12,7 @@ All stages fall back gracefully. Internet search runs in parallel with retrieval
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 import hashlib
 import json
 import re
@@ -34,6 +35,44 @@ logger = structlog.get_logger(__name__)
 
 STOPWORDS = {"a", "an", "the", "is", "are", "of", "in", "for", "to", "and", "or", "with", "on", "at", "by"}
 RERANK_COMPRESS_THRESHOLD = 0.6
+
+
+@dataclass
+class AdaptiveQueryRepresentations:
+    """Adaptive multi-strategy representations tailored to query complexity and technical nature."""
+
+    strategy: str  # "direct_fast" | "semantic_hyde" | "multi_perspective"
+    rewritten_query: str
+    expanded_queries: list[str]
+    hyde_passage: str
+    applied_transformations: list[str]
+    perspective_queries: list[dict[str, str]] = field(default_factory=list)
+    dense_query: str = ""
+    sparse_query: str = ""
+    _timing_ms: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "routing_path": self.strategy,
+            "strategy": self.strategy,
+            "rewritten_query": self.rewritten_query,
+            "expanded_queries": self.expanded_queries,
+            "hyde_passage": self.hyde_passage,
+            "applied_transformations": self.applied_transformations,
+            "perspective_queries": self.perspective_queries,
+            "dense_query": self.dense_query,
+            "sparse_query": self.sparse_query,
+            "_timing_ms": self._timing_ms,
+        }
+
+    def __getitem__(self, key: str) -> Any:
+        return self.to_dict()[key]
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.to_dict().get(key, default)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.to_dict()
 
 
 def _stage_event(stage: str, label: str, status: str, elapsed_ms: float | None = None) -> dict:
@@ -96,13 +135,16 @@ class AdaptiveAdvancedRAGPipeline:
         routing_path = _detect_routing_path(query)
         selective_enabled = bool(getattr(self.settings, "enable_selective_query_transformation", True))
 
-        identity: dict[str, Any] = {
-            "rewritten_query": query,
-            "expanded_queries": [query],
-            "hyde_passage": query,
-            "routing_path": routing_path,
-            "applied_transformations": ["identity"],
-        }
+        identity = AdaptiveQueryRepresentations(
+            strategy=routing_path,
+            rewritten_query=query,
+            expanded_queries=[query],
+            hyde_passage=query,
+            applied_transformations=["identity"],
+            perspective_queries=[],
+            dense_query=query,
+            sparse_query=query,
+        )
 
         try:
             router_llm = get_sub_model_provider("router", tier)
@@ -129,6 +171,7 @@ class AdaptiveAdvancedRAGPipeline:
                 hyde = query
 
             applied_trans = []
+            perspective_queries: list[dict[str, str]] = []
             if selective_enabled:
                 if routing_path == "direct_fast":
                     # Exact syntax/CLI queries: skip hypothetical passage unless explicitly generated
@@ -139,22 +182,43 @@ class AdaptiveAdvancedRAGPipeline:
                         applied_trans.extend(["direct_passthrough", "hyde"])
                     if len(expanded) > 1:
                         applied_trans.append("expansion")
+                    dense_query = query.strip()
+                    sparse_query = query.strip()
                 elif routing_path == "semantic_hyde":
                     applied_trans.extend(["rewrite", "hyde"])
                     if len(expanded) > 1:
                         applied_trans.append("expansion")
+                    dense_query = f"{rewritten} {hyde}".strip() if hyde != rewritten else rewritten
+                    sparse_query = rewritten
                 else:  # "multi_perspective"
-                    applied_trans.extend(["rewrite", "expansion", "hyde"])
+                    applied_trans.extend(["rewrite", "expansion", "multi_perspective"])
+                    p_arch = f"{rewritten} architecture features differences"
+                    p_cost = f"{rewritten} pricing cost tiers TCO"
+                    p_perf = f"{rewritten} performance scalability SLA high availability"
+                    perspective_queries = [
+                        {"dimension": "architecture", "query": p_arch},
+                        {"dimension": "pricing", "query": p_cost},
+                        {"dimension": "performance", "query": p_perf},
+                    ]
+                    if len(expanded) <= 1:
+                        expanded = [p_arch, p_cost, p_perf]
+                    dense_query = f"{rewritten} architecture comparison performance pricing".strip()
+                    sparse_query = rewritten
             else:
                 applied_trans.extend(["rewrite", "expansion", "hyde"])
+                dense_query = f"{rewritten} {hyde}".strip()
+                sparse_query = rewritten
 
-            transformed = {
-                "rewritten_query": rewritten,
-                "expanded_queries": expanded,
-                "hyde_passage": hyde,
-                "routing_path": routing_path,
-                "applied_transformations": applied_trans,
-            }
+            transformed = AdaptiveQueryRepresentations(
+                strategy=routing_path,
+                rewritten_query=rewritten,
+                expanded_queries=expanded,
+                hyde_passage=hyde,
+                applied_transformations=applied_trans,
+                perspective_queries=perspective_queries,
+                dense_query=dense_query,
+                sparse_query=sparse_query,
+            )
         except asyncio.CancelledError:
             raise
         except asyncio.TimeoutError:
@@ -172,13 +236,13 @@ class AdaptiveAdvancedRAGPipeline:
             transformed = identity
 
         elapsed = time.perf_counter() - t0
-        transformed["_timing_ms"] = round(elapsed * 1000, 2)
+        transformed._timing_ms = round(elapsed * 1000, 2)
         RAG_STAGE_DURATION_SECONDS.labels(stage="transform_query", tier=tier).observe(elapsed)
         logger.info(
             "pipeline.stage_complete",
             stage="transform_query",
             tier=tier,
-            duration_ms=transformed["_timing_ms"],
+            duration_ms=transformed._timing_ms,
             routing_path=transformed.get("routing_path", "semantic_hyde"),
             transformations=transformed.get("applied_transformations", []),
             expanded_count=len(transformed["expanded_queries"]),
@@ -188,7 +252,7 @@ class AdaptiveAdvancedRAGPipeline:
     async def _multi_query_retrieve(
         self,
         original_query: str,
-        transformed: dict[str, Any],
+        transformed: dict[str, Any] | AdaptiveQueryRepresentations,
         provider_filter_dict: dict[str, Any] | None,
         classification: QueryClassification,
         tier: str,
@@ -216,6 +280,14 @@ class AdaptiveAdvancedRAGPipeline:
 
         def _compute_adaptive_fusion_weights(q: str, rewritten: str) -> tuple[float, float]:
             """Compute dynamic query-adaptive fusion weights alpha(q) for Quake dense vs BM25 sparse."""
+            strategy = transformed.get("routing_path", "")
+            if strategy == "direct_fast":
+                return 0.3, 0.7
+            if strategy == "multi_perspective":
+                return 0.55, 0.45
+            if strategy == "semantic_hyde":
+                return 0.7, 0.3
+
             combined = f"{q} {rewritten}".lower()
             is_exact = bool(re.search(r"(--[a-zA-Z0-9_-]+|\b[A-Z][a-zA-Z0-9]+Exception\b|\bError:\b|\b\d{3}\s+Forbidden\b|\b\d+\.\d+\.\d+\b)", combined))
             has_cli = any(cmd in combined for cmd in ["aws ", "az ", "gcloud ", "kubectl ", "terraform "])
@@ -244,6 +316,9 @@ class AdaptiveAdvancedRAGPipeline:
         from api.chat_routes import pipeline as agent_pipeline
 
         async def _hyde_search() -> list[RetrievalResult]:
+            # Direct/fast syntax queries bypass hypothetical hallucinated passages
+            if transformed.get("routing_path") == "direct_fast" and "hyde" not in transformed.get("applied_transformations", []):
+                return []
             try:
                 if not getattr(agent_pipeline, "embedding_engine", None):
                     return []
@@ -387,7 +462,7 @@ class AdaptiveAdvancedRAGPipeline:
         self,
         candidates: list[RetrievalResult],
         query: str,
-        transformed: dict[str, Any],
+        transformed: dict[str, Any] | AdaptiveQueryRepresentations,
     ) -> tuple[bool, float, str]:
         """Evaluate post-retrieval feedback metrics to determine if re-planning is required."""
         if not candidates:
@@ -404,12 +479,21 @@ class AdaptiveAdvancedRAGPipeline:
             if spread < 0.015 and top_score < 0.50:
                 return True, top_score, "flat_indistinguishable_candidates"
 
+        # Check technical keyword coverage on top candidates
+        q_tokens = [w.lower() for w in re.findall(r"\b[a-zA-Z0-9_-]{3,}\b", query) if w.lower() not in STOPWORDS]
+        if q_tokens:
+            top_texts = " ".join((c.text or "").lower() for c in candidates[:3])
+            matched = sum(1 for tok in q_tokens if tok in top_texts)
+            coverage = matched / len(q_tokens)
+            if coverage < 0.35 and top_score < 0.65:
+                return True, top_score, f"keyword_coverage_gap ({coverage:.2f} < 0.35)"
+
         return False, top_score, "sufficient_retrieval"
 
     async def _replan_retrieval(
         self,
         query: str,
-        transformed: dict[str, Any],
+        transformed: dict[str, Any] | AdaptiveQueryRepresentations,
         feedback_diagnosis: str,
         tier: str,
         retriever: Any,
@@ -437,7 +521,14 @@ class AdaptiveAdvancedRAGPipeline:
             replanned_query = data.get("replanned_query", "").strip() or query
         except Exception as e:
             logger.warning("adaptive_rag.replan_llm_error", error=str(e))
-            replanned_query = f"{query} overview architecture concepts configuration"
+            if "zero_candidates" in feedback_diagnosis:
+                # Query relaxation: strip punctuation, flags, relax constraints
+                relaxed = re.sub(r"(--[a-zA-Z0-9_-]+|\b[A-Z0-9_-]+=[^\s]+)", "", query).strip()
+                replanned_query = f"{relaxed} overview documentation" if relaxed else f"{query} overview"
+            elif "keyword_coverage" in feedback_diagnosis:
+                replanned_query = f"{query} technical architecture reference concepts"
+            else:
+                replanned_query = f"{query} overview architecture concepts configuration"
 
         try:
             new_candidates = await retriever.retrieve(
@@ -862,6 +953,13 @@ class AdaptiveAdvancedRAGPipeline:
                     diagnosis=fb_diagnosis,
                     tier=tier,
                 )
+                if emit_event:
+                    if getattr(self.settings, "enable_structured_stage_events", True):
+                        await emit_event(_stage_event(
+                            "replan", f"Adaptive feedback ({fb_diagnosis}): replanning query...", "start"
+                        ))
+                    else:
+                        await emit_event({"status": f"Refining search query ({fb_diagnosis})..."})
                 t0_replan = time.perf_counter()
                 replanned_candidates, replan_pass = await self._replan_retrieval(
                     query=query,
@@ -879,6 +977,11 @@ class AdaptiveAdvancedRAGPipeline:
                             candidates.append(c)
                     fallback_pass = f"{fallback_pass}+{replan_pass}"
                 timings["retrieval_replan"] = round((time.perf_counter() - t0_replan) * 1000, 2)
+                if emit_event and getattr(self.settings, "enable_structured_stage_events", True):
+                    await emit_event(_stage_event(
+                        "replan", "Adaptive search refined", "complete",
+                        elapsed_ms=timings["retrieval_replan"]
+                    ))
 
         for chunk in candidates:
             m = chunk.metadata

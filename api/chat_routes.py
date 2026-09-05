@@ -618,12 +618,21 @@ async def _retrieve_with_fallback(
             except TypeError:
                 return await retriever.retrieve(query=query, top_k=retrieval_k, filters=filters)
 
+    rerank_query = query
+    if chat_history and getattr(settings, "enable_contextual_query_rewriting", True):
+        try:
+            from retrieval.query_processor import rewrite_contextual_query
+            _ctx = rewrite_contextual_query(query, chat_history=chat_history)
+            rerank_query = _ctx.effective_dense_query
+        except Exception:
+            rerank_query = query
+
     strict_f = _build_strict_filter(provider_filter, classification)
     if strict_f:
         cands = await _safe_retrieve(strict_f)
         if len(cands) >= 5:
             reranked = await asyncio.to_thread(
-                reranker.rerank, query=query, results=cands, top_k=settings.rerank_top_k
+                reranker.rerank, query=rerank_query, results=cands, top_k=settings.rerank_top_k
             )
             return reranked, "pass1_strict"
 
@@ -632,14 +641,14 @@ async def _retrieve_with_fallback(
         cands = await _safe_retrieve(prov_f)
         if len(cands) >= 5:
             reranked = await asyncio.to_thread(
-                reranker.rerank, query=query, results=cands, top_k=settings.rerank_top_k
+                reranker.rerank, query=rerank_query, results=cands, top_k=settings.rerank_top_k
             )
             return reranked, "pass2_provider"
 
     cands = await _safe_retrieve(None)
     if cands:
         reranked = await asyncio.to_thread(
-            reranker.rerank, query=query, results=cands, top_k=settings.rerank_top_k
+            reranker.rerank, query=rerank_query, results=cands, top_k=settings.rerank_top_k
         )
     else:
         reranked = []

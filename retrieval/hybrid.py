@@ -147,8 +147,8 @@ class HybridRetriever:
                 q_str = str(query)
                 q_ctx = QueryContext(original_query=q_str, normalized_query=q_str, rewritten_query=q_str)
 
-            dense_search_text = q_ctx.effective_search_query
-            sparse_search_text = q_ctx.original_query or q_ctx.normalized_query
+            dense_search_text = q_ctx.effective_dense_query
+            sparse_search_text = q_ctx.effective_sparse_query
 
             target_namespaces = namespaces or ([namespace] if namespace else self._select_namespaces(filters))
             dense_weight, sparse_weight = self._get_effective_weights(q_ctx.original_query)

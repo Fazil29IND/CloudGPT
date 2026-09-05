@@ -111,3 +111,46 @@ async def test_original_query_preservation_in_hybrid_retriever():
     cids = [r.chunk_id for r in results]
     assert "d1" in cids
     assert "s1" in cids
+
+
+def test_self_contained_query_not_hijacked_by_prior_history():
+    """Verify that a self-contained query with internal pronoun 'it' is NOT corrupted by prior turns."""
+    history = [
+        {"role": "user", "content": "How do I configure Azure Cosmos DB?"},
+        {"role": "assistant", "content": "Azure Cosmos DB offers multi-region replication."},
+    ]
+    # Self-contained query mentioning AWS S3 explicitly
+    query = "What is AWS S3 and how does it handle lifecycle expiration policies?"
+    ctx = rewrite_contextual_query(query, chat_history=history)
+
+    assert ctx.is_rewritten is False
+    assert "cosmos" not in ctx.effective_dense_query.lower()
+    assert "s3" in ctx.effective_dense_query.lower()
+
+
+def test_cli_invocation_not_rewritten_by_history():
+    """Verify direct CLI command invocations remain untransformed."""
+    history = [
+        {"role": "user", "content": "Tell me about Amazon DynamoDB tables."},
+    ]
+    cli_cmd = "kubectl get pods -n kube-system -l app=ingress"
+    ctx = rewrite_contextual_query(cli_cmd, chat_history=history)
+
+    assert ctx.is_rewritten is False
+    assert ctx.original_query == cli_cmd
+    assert ctx.effective_sparse_query == cli_cmd
+
+
+def test_dual_stream_effective_query_properties():
+    """Verify effective_dense_query expands context while effective_sparse_query preserves syntax."""
+    history = [
+        {"role": "user", "content": "Tell me about Amazon S3 glacier flexible retrieval."},
+    ]
+    query = "What are its retrieval tiers --tier Expedited?"
+    ctx = rewrite_contextual_query(query, chat_history=history)
+
+    assert ctx.is_rewritten is True
+    # Dense gets entity context
+    assert "s3" in ctx.effective_dense_query.lower()
+    # Sparse preserves exact CLI flag
+    assert "--tier Expedited" in ctx.effective_sparse_query

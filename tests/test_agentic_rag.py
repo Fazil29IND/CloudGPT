@@ -339,3 +339,96 @@ async def test_full_pipeline_run_returns_pipeline_result(agentic_pipeline):
     assert "plan_route" in result.pipeline_timings
     assert "hybrid_retrieve" in result.pipeline_timings
     assert "grade_evidence" in result.pipeline_timings
+
+
+def test_build_plan_guided_representation(agentic_pipeline):
+    """Test asymmetric generation of dense and sparse representations guided by the plan."""
+    plan = {
+        "intent": "troubleshooting",
+        "providers": ["aws"],
+        "sub_queries": ["What is Lambda concurrency error 429?"],
+        "retrieval_modality": "hybrid",
+    }
+    raw_query = "Can you please tell me how to fix RequestLimitExceeded error --max-concurrency?"
+
+    rep = agentic_pipeline._build_plan_guided_representation(raw_query, plan=plan)
+
+    # Dense representation: includes troubleshooting anchors and provider prefix
+    assert "troubleshooting" in rep.dense_query
+    assert "AWS" in rep.dense_query
+    assert "RequestLimitExceeded" in rep.dense_query
+
+    # Sparse representation: stripped boilerplate, preserved exact error and flag
+    assert not rep.sparse_query.lower().startswith("can you please tell me")
+    assert "RequestLimitExceeded" in rep.sparse_query
+    assert "--max-concurrency" in rep.sparse_query
+
+    # Sub-query representations
+    assert len(rep.sub_query_representations) == 1
+    sq_dense, sq_sparse = rep.sub_query_representations[0]
+    assert "troubleshooting" in sq_dense
+    assert "429" in sq_sparse
+
+
+@pytest.mark.asyncio
+async def test_hybrid_retrieve_uses_plan_guided_representations(agentic_pipeline):
+    """Test that _hybrid_retrieve dispatches plan_repr.dense_query to dense retriever and plan_repr.sparse_query to sparse retriever."""
+    mock_retriever = MagicMock()
+    mock_dense = MagicMock()
+    mock_sparse = MagicMock()
+
+    mock_dense.retrieve = AsyncMock(return_value=[RetrievalResult(chunk_id="d1", text="lambda doc", score=0.9)])
+    mock_sparse.retrieve = AsyncMock(return_value=[RetrievalResult(chunk_id="s1", text="error trace", score=0.85)])
+
+    mock_retriever.dense_retriever = mock_dense
+    mock_retriever.sparse_retriever = mock_sparse
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank = MagicMock(side_effect=lambda q, cands, top_k: cands[:top_k])
+
+    classification = QueryClassification(
+        intent="troubleshooting",
+        routes=["RAG"],
+        providers=["aws"],
+        services=[],
+        categories=[],
+        confidence=0.9,
+        reasoning="",
+        needs_internet=False,
+    )
+    plan = {
+        "intent": "troubleshooting",
+        "providers": ["aws"],
+        "sub_queries": [],
+        "retrieval_strategy": "broad",
+        "retrieval_modality": "hybrid",
+    }
+
+    raw_query = "Could you explain why I get RequestLimitExceeded --timeout=30?"
+
+    with patch("retrieval.agentic_rag.get_cached_retrieval_result", return_value=None), \
+         patch("retrieval.agentic_rag.set_cached_retrieval_result", return_value=None):
+        results, fallback = await agentic_pipeline._hybrid_retrieve(
+            query=raw_query,
+            sub_queries=[],
+            retrieval_strategy="broad",
+            provider_filter="aws",
+            classification=classification,
+            tier="Pro",
+            retriever=mock_retriever,
+            reranker=mock_reranker,
+            retrieval_modality="hybrid",
+            plan=plan,
+        )
+
+    # Verify dense retriever got semantic framing with AWS
+    dense_call_arg = mock_dense.retrieve.call_args[0][0]
+    assert "troubleshooting" in dense_call_arg
+    assert "AWS" in dense_call_arg
+
+    # Verify sparse retriever got high-signal query without conversational boilerplate
+    sparse_call_arg = mock_sparse.retrieve.call_args[0][0]
+    assert not sparse_call_arg.lower().startswith("could you explain")
+    assert "--timeout=30" in sparse_call_arg
+    assert fallback == "agentic_hybrid_rrf"
+

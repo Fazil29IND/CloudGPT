@@ -55,6 +55,18 @@ CLOUD_CANONICAL_SYNONYMS: dict[str, str] = {
     r"\bentra id\b": "microsoft entra id azure active directory",
 }
 
+# Known major cloud providers and canonical cloud entities
+CLOUD_PROVIDERS = ("aws", "gcp", "azure")
+
+KNOWN_CLOUD_ENTITIES = {
+    "s3", "ec2", "lambda", "rds", "dynamodb", "ecs", "eks", "fargate",
+    "cloud storage", "gcs", "compute engine", "cloud run", "gke", "cloud sql", "bigquery",
+    "azure vm", "blob storage", "aks", "cosmos db", "azure functions", "vpc", "iam",
+    "route 53", "route53", "sns", "sqs", "cloudwatch", "cloudfront", "ebs", "elb", "alb", "nlb",
+    "entra id", "cloud interconnect", "direct connect", "transit gateway",
+    "aws", "gcp", "azure", "google cloud",
+}
+
 # Regex to detect exact technical queries (CLI flags, exception classes, error codes, HTTP codes, IPs)
 EXACT_TECHNICAL_PATTERN = re.compile(
     r"(--[a-zA-Z0-9_-]+|\b[A-Z][a-zA-Z0-9]+Exception\b|\b[A-Z][a-zA-Z0-9]+Error\b|"
@@ -64,15 +76,18 @@ EXACT_TECHNICAL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Regex to detect pure CLI command invocations
+CLI_COMMAND_INVOCATION_PATTERN = re.compile(
+    r"^\s*(aws|az|gcloud|kubectl|terraform)\s+[a-z0-9_-]+",
+    re.IGNORECASE,
+)
+
 # Pronouns & anaphoric markers requiring multi-turn resolution
 ANAPHORA_PATTERN = re.compile(
     r"\b(it|its|they|them|their|this|that|these|those|the service|the former|the latter|"
     r"the first one|the second one|that one|previous one)\b",
     re.IGNORECASE,
 )
-
-# Known major cloud providers
-CLOUD_PROVIDERS = ("aws", "gcp", "azure")
 
 
 @dataclass
@@ -90,6 +105,37 @@ class QueryContext:
     def effective_search_query(self) -> str:
         """Returns rewritten query if contextual rewriting was applied, else normalized query."""
         return self.rewritten_query if self.is_rewritten else self.normalized_query
+
+    @property
+    def effective_dense_query(self) -> str:
+        """Returns semantic-optimized query representation for dense vector search."""
+        return self.rewritten_query if self.is_rewritten else self.normalized_query
+
+    @property
+    def effective_sparse_query(self) -> str:
+        """
+        Returns pristine lexical query representation for sparse BM25 search.
+        Strictly preserves exact CLI flags, casing, exception names, syntax symbols, and operators.
+        """
+        if self.is_exact_technical or "--" in self.original_query:
+            return self.original_query
+        return self.original_query or self.normalized_query
+
+
+def is_self_contained_query(query: str) -> bool:
+    """
+    Determine if query already explicitly names a cloud service or provider.
+    Self-contained queries should NOT have their internal pronouns hijacked by entities
+    from previous conversational turns (e.g. 'What is AWS Lambda and how does it scale?').
+    """
+    if not query or not query.strip():
+        return False
+    q_low = query.lower()
+    for entity in KNOWN_CLOUD_ENTITIES:
+        pattern = r"\b" + re.escape(entity) + r"\b"
+        if re.search(pattern, q_low):
+            return True
+    return False
 
 
 def normalize_query(query: str, expand_acronyms: bool = True) -> str:
@@ -179,6 +225,31 @@ def rewrite_contextual_query(
     detected_providers = [p for p in CLOUD_PROVIDERS if p in raw_query.lower()]
 
     if not chat_history or not raw_query:
+        return QueryContext(
+            original_query=raw_query,
+            normalized_query=norm_query,
+            rewritten_query=norm_query,
+            is_rewritten=False,
+            is_exact_technical=is_exact,
+            extracted_entities=[],
+            detected_providers=detected_providers,
+        )
+
+    # Direct CLI command invocations should never be rewritten
+    if CLI_COMMAND_INVOCATION_PATTERN.search(raw_query):
+        return QueryContext(
+            original_query=raw_query,
+            normalized_query=norm_query,
+            rewritten_query=norm_query,
+            is_rewritten=False,
+            is_exact_technical=is_exact,
+            extracted_entities=[],
+            detected_providers=detected_providers,
+        )
+
+    # Self-contained queries (where cloud entities are already in the query)
+    # should NOT have their internal pronouns hijacked by entities from previous turns
+    if is_self_contained_query(raw_query):
         return QueryContext(
             original_query=raw_query,
             normalized_query=norm_query,

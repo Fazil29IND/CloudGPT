@@ -236,3 +236,134 @@ async def test_full_pipeline_run_returns_pipeline_result(adaptive_pipeline):
     assert "multi_query_retrieve" in result.pipeline_timings
     assert "rerank_compress" in result.pipeline_timings
     assert "generate" in result.pipeline_timings
+
+
+# ── Stage 5: Multi-Strategy Representation & Feedback Tests ─────────────────
+
+@pytest.mark.asyncio
+async def test_adaptive_query_representation_direct_fast(adaptive_pipeline):
+    """Verify direct_fast strategy for CLI syntax and error codes without hyde hallucination."""
+    mock_router = MagicMock()
+    mock_router.classify = AsyncMock(return_value=json.dumps({
+        "rewritten_query": "aws s3 cp mybucket",
+        "expanded_queries": ["aws s3 cp mybucket"],
+        "hyde_passage": "hallucinated passage",
+    }))
+
+    with patch("retrieval.adaptive_rag.get_sub_model_provider", return_value=mock_router):
+        rep = await adaptive_pipeline._transform_query("aws s3 cp mybucket/test s3://dest --recursive", "Max")
+
+    assert rep.strategy == "direct_fast"
+    assert "direct_passthrough" in rep.applied_transformations
+    assert rep.sparse_query == "aws s3 cp mybucket/test s3://dest --recursive"
+    assert rep["routing_path"] == "direct_fast"
+
+
+@pytest.mark.asyncio
+async def test_adaptive_query_representation_multi_perspective(adaptive_pipeline):
+    """Verify multi_perspective strategy decomposes comparison into architectural dimensions."""
+    mock_router = MagicMock()
+    mock_router.classify = AsyncMock(return_value=json.dumps({
+        "rewritten_query": "AWS Aurora vs GCP Cloud Spanner",
+        "expanded_queries": ["AWS Aurora vs GCP Cloud Spanner"],
+        "hyde_passage": "Comparison overview",
+    }))
+
+    with patch("retrieval.adaptive_rag.get_sub_model_provider", return_value=mock_router):
+        rep = await adaptive_pipeline._transform_query("Compare AWS Aurora vs GCP Cloud Spanner for global scaling", "Max")
+
+    assert rep.strategy == "multi_perspective"
+    assert len(rep.perspective_queries) == 3
+    dims = [p["dimension"] for p in rep.perspective_queries]
+    assert "architecture" in dims
+    assert "pricing" in dims
+    assert "performance" in dims
+    # Expanded queries should contain dimensional queries
+    assert any("pricing" in eq.lower() for eq in rep.expanded_queries)
+    assert any("architecture" in eq.lower() for eq in rep.expanded_queries)
+
+
+@pytest.mark.asyncio
+async def test_multi_query_retrieve_bypasses_hyde_for_direct_fast(adaptive_pipeline):
+    """Verify that direct_fast bypasses hyde search to prevent vector drift on exact syntax."""
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve = AsyncMock(return_value=[
+        RetrievalResult(chunk_id="c1", text="aws s3 cp syntax", score=0.95, metadata={"url": "http://docs.aws.amazon.com/s3"})
+    ])
+
+    mock_emb = MagicMock()
+    mock_emb.embed_query = AsyncMock(return_value=[0.1] * 1536)
+
+    transformed = {
+        "routing_path": "direct_fast",
+        "strategy": "direct_fast",
+        "rewritten_query": "aws s3 cp",
+        "expanded_queries": ["aws s3 cp"],
+        "hyde_passage": "hallucinated passage",
+        "applied_transformations": ["direct_passthrough"],
+    }
+    classification = QueryClassification(
+        intent="troubleshooting", routes=["RAG"], providers=["aws"], services=["s3"],
+        categories=["storage"], confidence=0.9, reasoning="", needs_internet=False
+    )
+
+    with patch("api.chat_routes.pipeline.embedding_engine", mock_emb), \
+         patch("retrieval.adaptive_rag.get_cached_retrieval_result", return_value=None), \
+         patch("retrieval.adaptive_rag.set_cached_retrieval_result", return_value=None):
+        results, fallback_pass = await adaptive_pipeline._multi_query_retrieve(
+            original_query="aws s3 cp file.txt s3://bucket/",
+            transformed=transformed,
+            provider_filter_dict={"provider": "aws"},
+            classification=classification,
+            tier="Max",
+            retriever=mock_retriever,
+            reranker=None,
+        )
+
+    # Embedding engine should NOT have been called for HyDE since it was bypassed
+    mock_emb.embed_query.assert_not_called()
+    assert len(results) == 1
+    assert results[0].chunk_id == "c1"
+
+
+def test_evaluate_retrieval_feedback_keyword_coverage_gap(adaptive_pipeline):
+    """Verify keyword coverage gap detection when candidates lack key query tokens."""
+    candidates = [
+        RetrievalResult(chunk_id="c1", text="generic cloud storage docs", score=0.55),
+        RetrievalResult(chunk_id="c2", text="general s3 buckets", score=0.52),
+    ]
+    query = "troubleshooting dynamodb transactions RequestLimitExceeded throughput"
+    needs_replan, score, diagnosis = adaptive_pipeline._evaluate_retrieval_feedback(
+        candidates, query, {"rewritten_query": query}
+    )
+    assert needs_replan is True
+    assert "keyword_coverage_gap" in diagnosis
+
+
+@pytest.mark.asyncio
+async def test_replan_retrieval_query_relaxation_on_llm_failure(adaptive_pipeline):
+    """Verify rule-based query relaxation in _replan_retrieval when sub-model fails."""
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve = AsyncMock(return_value=[
+        RetrievalResult(chunk_id="r1", text="relaxed docs", score=0.88)
+    ])
+    mock_router = MagicMock()
+    mock_router.classify = AsyncMock(side_effect=RuntimeError("Sub-model down"))
+
+    with patch("retrieval.adaptive_rag.get_sub_model_provider", return_value=mock_router):
+        new_candidates, pass_name = await adaptive_pipeline._replan_retrieval(
+            query="aws ec2 describe-instances --filter-name=tag:Environment --max-results=50",
+            transformed={"rewritten_query": "aws ec2"},
+            feedback_diagnosis="zero_candidates_retrieved",
+            tier="Max",
+            retriever=mock_retriever,
+            reranker=None,
+        )
+
+    assert len(new_candidates) == 1
+    assert pass_name == "adaptive_replanned"
+    called_query = mock_retriever.retrieve.call_args[0][0]
+    # Check that flags were relaxed/stripped
+    assert "--filter-name" not in called_query
+    assert "overview" in called_query
+

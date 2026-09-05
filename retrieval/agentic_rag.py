@@ -17,6 +17,7 @@ import hashlib
 import json
 import re
 import time
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator
 
 import structlog
@@ -32,6 +33,18 @@ from retrieval.hybrid import RetrievalResult
 from router.query_router import QueryClassification, provider_aliases
 
 logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class PlanGuidedQueryRepresentation:
+    """Encapsulates asymmetric plan-guided dynamic query representations for dense and sparse retrieval streams."""
+    original_query: str
+    dense_query: str
+    sparse_query: str
+    sub_query_representations: list[tuple[str, str]] = field(default_factory=list)  # (dense, sparse) per sub-query
+    guidance_intent: str = "explain"
+    retrieval_modality: str = "hybrid"
+    providers: list[str] = field(default_factory=list)
 
 
 def _stage_event(stage: str, label: str, status: str, elapsed_ms: float | None = None) -> dict:
@@ -214,6 +227,81 @@ class AgenticRAGPipeline:
         )
         return plan
 
+    def _build_plan_guided_representation(
+        self,
+        query: str,
+        plan: dict[str, Any] | None = None,
+        classification: QueryClassification | None = None,
+    ) -> PlanGuidedQueryRepresentation:
+        """
+        Build asymmetric, plan-guided dynamic query representations for dense vector and sparse BM25 retrieval.
+
+        - Dense representation: Semantically framed according to the plan's architectural intent
+          (troubleshooting, architecture, comparison, cost estimation) and detected cloud providers.
+        - Sparse representation: High-signal lexical isolation stripping conversational boilerplate
+          while strictly retaining exact CLI commands, flags, and error classes.
+        - Sub-query representations: Dynamic pairs for decomposed multi-hop retrieval sub-goals.
+        """
+        plan = plan or {}
+        intent = str(plan.get("intent", getattr(classification, "intent", "explain"))).lower()
+        providers = plan.get("providers", getattr(classification, "providers", [])) or []
+        sub_queries = plan.get("sub_queries", []) or []
+        modality = str(plan.get("retrieval_modality", "hybrid"))
+
+        # 1. Dense Semantic Contextualization
+        semantic_anchors = {
+            "troubleshooting": "troubleshooting root cause diagnosis error resolution remediation runbook",
+            "error_fix": "error resolution diagnosis fix remediation troubleshooting",
+            "architecture": "architecture design patterns well-architected framework high availability scalability resilience",
+            "compare": "feature comparison architectural differences trade-offs SLA pricing performance",
+            "cost_estimate": "pricing tiers cost optimization billing models reserved instances savings plans",
+            "how_to": "configuration implementation guide best practices step-by-step setup",
+            "explain": "cloud architecture technical overview implementation details",
+        }
+        semantic_framing = semantic_anchors.get(intent, "cloud architecture technical overview implementation")
+
+        # Anchor provider context if explicit and not already in query
+        provider_prefix = ""
+        q_lower = query.lower()
+        if providers:
+            missing_providers = [p for p in providers if p.lower() not in q_lower]
+            if missing_providers:
+                provider_prefix = f"{' '.join(p.upper() for p in missing_providers)} "
+
+        dense_query = f"{provider_prefix}{query.strip()} {semantic_framing}".strip()
+
+        # 2. Sparse High-Signal Lexical Extraction
+        # Strip polite / conversational boilerplate while retaining technical identifiers & flags
+        filler_pattern = re.compile(
+            r"^((can|could|would)\s+you\s+(please\s+)?(tell|explain|show|help)\s+(me\s+)?(about\s+|why\s+|how\s+)?|"
+            r"how\s+(do\s+i|can\s+i|to)\s+|"
+            r"what\s+is\s+(the\s+)?|"
+            r"please\s+(explain|describe)\s+|"
+            r"tell\s+me\s+about\s+)",
+            re.IGNORECASE,
+        )
+        stripped = filler_pattern.sub("", query.strip()).strip()
+        sparse_query = stripped if stripped else query.strip()
+
+        # 3. Sub-Query Dynamic Representations
+        sub_query_reprs: list[tuple[str, str]] = []
+        for sq in sub_queries:
+            sq_str = str(sq).strip()
+            sq_dense = f"{sq_str} {semantic_framing}".strip()
+            sq_stripped = filler_pattern.sub("", sq_str).strip()
+            sq_sparse = sq_stripped if sq_stripped else sq_str
+            sub_query_reprs.append((sq_dense, sq_sparse))
+
+        return PlanGuidedQueryRepresentation(
+            original_query=query,
+            dense_query=dense_query,
+            sparse_query=sparse_query,
+            sub_query_representations=sub_query_reprs,
+            guidance_intent=intent,
+            retrieval_modality=modality,
+            providers=providers,
+        )
+
     async def _hybrid_retrieve(
         self,
         query: str,
@@ -225,6 +313,7 @@ class AgenticRAGPipeline:
         retriever: Any,
         reranker: Any,
         retrieval_modality: str = "hybrid",
+        plan: dict[str, Any] | None = None,
     ) -> tuple[list[RetrievalResult], str]:
         t0 = time.perf_counter()
         cache_query_key = f"agentic:{hashlib.sha256(query.encode()).hexdigest()[:16]}:{provider_filter or 'all'}:{tier}"
@@ -257,8 +346,41 @@ class AgenticRAGPipeline:
         dense_ret = getattr(retriever, "dense_retriever", None)
         sparse_ret = getattr(retriever, "sparse_retriever", None)
 
+        plan_repr = self._build_plan_guided_representation(query, plan=plan, classification=classification)
+
         if retrieval_strategy == "multi-hop" and sub_queries:
-            async def _retrieve_sq(sq_text: str):
+            async def _retrieve_sq(sq_text: str, sq_dense: str, sq_sparse: str):
+                # If retriever has discrete sub-retrievers, route with plan-guided representations
+                if dense_ret and sparse_ret and retrieval_modality in ("dense", "sparse", "hybrid"):
+                    try:
+                        if retrieval_modality == "dense":
+                            return await dense_ret.retrieve(
+                                sq_dense, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                            )
+                        elif retrieval_modality == "sparse":
+                            return await sparse_ret.retrieve(
+                                sq_sparse, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                            )
+                        else:
+                            d_task = dense_ret.retrieve(
+                                sq_dense, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                            )
+                            s_task = sparse_ret.retrieve(
+                                sq_sparse, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                            )
+                            d_res, s_res = await asyncio.gather(d_task, s_task, return_exceptions=True)
+                            d_list = d_res if isinstance(d_res, list) else []
+                            s_list = s_res if isinstance(s_res, list) else []
+                            sq_merged: dict[str, RetrievalResult] = {}
+                            for item in d_list:
+                                sq_merged[item.chunk_id] = item
+                            for item in s_list:
+                                if item.chunk_id not in sq_merged:
+                                    sq_merged[item.chunk_id] = item
+                            return list(sq_merged.values())
+                    except Exception:
+                        pass
+
                 try:
                     return await retriever.retrieve(
                         sq_text,
@@ -273,7 +395,14 @@ class AgenticRAGPipeline:
                         filters=prov_filter_dict,
                     )
 
-            tasks = [_retrieve_sq(sq) for sq in sub_queries]
+            tasks = []
+            for idx, sq in enumerate(sub_queries):
+                if idx < len(plan_repr.sub_query_representations):
+                    sq_d, sq_s = plan_repr.sub_query_representations[idx]
+                else:
+                    sq_d, sq_s = sq, sq
+                tasks.append(_retrieve_sq(sq, sq_d, sq_s))
+
             all_batches = await asyncio.gather(*tasks, return_exceptions=True)
 
             merged: dict[str, RetrievalResult] = {}
@@ -300,7 +429,7 @@ class AgenticRAGPipeline:
 
             if candidates and reranker:
                 top_results = await asyncio.to_thread(
-                    reranker.rerank, query, candidates, self.settings.rerank_top_k
+                    reranker.rerank, plan_repr.dense_query, candidates, self.settings.rerank_top_k
                 )
             else:
                 top_results = candidates[:self.settings.rerank_top_k]
@@ -311,20 +440,20 @@ class AgenticRAGPipeline:
             try:
                 if retrieval_modality == "dense":
                     candidates = await dense_ret.retrieve(
-                        query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                        plan_repr.dense_query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
                     )
                     fallback_pass = "agentic_dense_hnsw"
                 elif retrieval_modality == "sparse":
                     candidates = await sparse_ret.retrieve(
-                        query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                        plan_repr.sparse_query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
                     )
                     fallback_pass = "agentic_sparse_bm25"
                 else:  # "hybrid" -> Both are used, apply RRF Fusion!
                     dense_task = dense_ret.retrieve(
-                        query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                        plan_repr.dense_query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
                     )
                     sparse_task = sparse_ret.retrieve(
-                        query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                        plan_repr.sparse_query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
                     )
                     dense_res, sparse_res = await asyncio.gather(dense_task, sparse_task, return_exceptions=True)
 
@@ -358,7 +487,7 @@ class AgenticRAGPipeline:
 
                 if candidates and reranker:
                     top_results = await asyncio.to_thread(
-                        reranker.rerank, query, candidates, self.settings.rerank_top_k
+                        reranker.rerank, plan_repr.dense_query, candidates, self.settings.rerank_top_k
                     )
                 else:
                     top_results = candidates[:self.settings.rerank_top_k]
@@ -987,6 +1116,7 @@ class AgenticRAGPipeline:
             retriever=retriever,
             reranker=reranker,
             retrieval_modality=plan.get("retrieval_modality", "hybrid"),
+            plan=plan,
         )
 
         (chunks, fallback_pass), internet_results, pricing_data, calc_results = await asyncio.gather(
