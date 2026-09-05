@@ -1,35 +1,47 @@
 {
-  "timestamp": "2026-09-02T07:35:07.031997+00:00",
-  "active_corpus_version": "v1",
+  "timestamp": "2026-09-05T14:33:33.166589+00:00",
+  "active_corpus_version": "v2",
   "index_name": "cloud-docs",
-  "total_vector_count": 2083,
+  "total_vector_count": 3135,
   "namespaces": {
-    "__default__": {
-      "vector_count": 1175
+    "services-v2": {
+      "vector_count": 955
     },
     "troubleshooting-playbooks": {
       "vector_count": 18
     },
-    "iac-templates": {
-      "vector_count": 14
-    },
     "services-master": {
       "vector_count": 811
     },
+    "iac-templates-v2": {
+      "vector_count": 14
+    },
     "senior-engineer-knowledge": {
       "vector_count": 65
+    },
+    "__default__": {
+      "vector_count": 1175
+    },
+    "senior-engineer-knowledge-v2": {
+      "vector_count": 65
+    },
+    "iac-templates": {
+      "vector_count": 14
+    },
+    "troubleshooting-playbooks-v2": {
+      "vector_count": 18
     }
   },
   "local_chunks": {
-    "total_chunks": 811,
+    "total_chunks": 1066,
     "by_provider": {
-      "multi-cloud": 97,
-      "aws": 252,
-      "google-cloud": 223,
-      "azure": 239
+      "multi-cloud": 168,
+      "aws": 316,
+      "google-cloud": 282,
+      "azure": 300
     },
     "by_category": {
-      "Cloud Services Reference": 48,
+      "Cloud Services Reference": 88,
       "Lifecycle: 0. Account & Organization Setup": 10,
       "Lifecycle: 1. Identity Foundations": 7,
       "Lifecycle: 2. Networking Foundation": 12,
@@ -74,7 +86,33 @@
       "Next-Gen Observability & Operations": 1,
       "Next-Gen Hybrid, Edge & Sovereign": 1,
       "Next-Gen FinOps & Licensing": 1,
-      "Platform Architecture & Strategy": 5
+      "22. AI, Agents & Foundation Models \u2014 2026 Expansion": 21,
+      "23. Storage, Data & Analytics \u2014 2026 Expansion": 25,
+      "24. Compute, Silicon & Databases \u2014 2026 Expansion": 29,
+      "25. Security, Operations & Developer Tooling \u2014 2026 Expansion": 33,
+      "26. Vector & RAG Infrastructure (2026)": 14,
+      "27. Naming & Lifecycle Changes (2026 Sweep)": 18,
+      "28. Multi-Cloud Zero-Trust, SASE & Edge Network Fabrics (2026 Expansion)": 19,
+      "29. Sustainable FinOps, Carbon Accounting & Capacity Planning (2026 Expansion)": 16,
+      "30. AI Agent Tooling, MCP Gateways & Protocol Interoperability (2026 Expansion)": 18,
+      "31. Next-Gen Enterprise Compute & Silicon Architecture (2026 Expansion)": 1,
+      "Operational Excellence Pillar": 1,
+      "Security Pillar": 1,
+      "Reliability Pillar": 1,
+      "Performance Efficiency Pillar": 1,
+      "Cost Optimization Pillar": 1,
+      "Sustainability Pillar": 1,
+      "Storage & Database Throughput Limits": 1,
+      "Compute & Serverless Scaling Limits": 1,
+      "Networking & API Gateway Limits": 1,
+      "Compute Commitments & Cost Governance": 1,
+      "Data Transfer & Interconnect Tariffs": 1,
+      "Hybrid Enterprise Software Licensing": 1,
+      "The 7 Rs Migration Strategies": 1,
+      "Enterprise Migration Frameworks & Programs": 1,
+      "Sovereign Clouds & Government Cloud Partitions": 1,
+      "Global Compliance Standards Matrix": 1,
+      "Platform Architecture & Strategy": 10
     }
   }
 }

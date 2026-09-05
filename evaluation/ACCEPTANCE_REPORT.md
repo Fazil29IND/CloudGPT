@@ -1,30 +1,29 @@
 # CloudGPT RAG & Cache Architecture — Final Acceptance Report
 
-**Date:** 2026-09-03 07:15:00Z  
-**Active Corpus Version:** `v2` (Promoted)  
-**Cache Schema:** `rag:v2:*` (3-Layer Versioned) & `semcache:v2:v1:*` (Vector Semantic Cache)  
+**Date:** 2026-09-05 14:29:43Z  
+**Active Corpus Version:** `v2`  
+**Cache Schema:** `rag:v2:*` (3-Layer Versioned)  
 **Embedding Model:** `BAAI/bge-small-en-v1.5` (Dimension: 384)  
-**BM25 Lexical Engine:** `BM25S (Robertson)` + In-Process / Pinecone Hybrid  
-**Total Pinecone Vectors:** 3,135 (Zero-Downtime Blue/Green Promotion)  
+**BM25 Lexical Engine:** `BM25S (Robertson)`  
 
 ---
 
 ## 1. Executive Summary & Verification Gates
 
-All engineering phases spanning **Phase 1 through Phase 6** of the 2026 Services Corpus, Pinecone & Redis modernization plan have been implemented, tested, and validated against the production specification.
+All 20 engineering tasks spanning **Phase 0 through Phase 5** have been implemented, tested, and validated against the production specification.
 
 | Gate / Component | Status | Verification Criteria |
 | :--- | :--- | :--- |
-| Corpus 2026 Expansion | ✅ **PASSED** | 35 categories, 848 service cards (+134 cards across re:Invent '25, Next '26, Build '26) |
-| Manifest & Derived Artifacts | ✅ **PASSED** | `sources/sources.json` (848 entries), `sources/sources.csv` (849 rows) regenerated |
-| Pinecone Serverless Ingestion (v2) | ✅ **PASSED** | 1,052 chunks indexed into `services-v2`, `senior-engineer-knowledge-v2`, `troubleshooting-playbooks-v2`, `iac-templates-v2` |
-| Zero-Downtime Promotion | ✅ **PASSED** | `ACTIVE_CORPUS_VERSION=v2`, `CACHE_CORPUS_VERSION=v2` promoted atomically |
-| Namespace Pruning & Latency | ✅ **PASSED** | Legacy fallbacks (`services-master`, `""`) pruned in v2; up to 60% fewer Pinecone roundtrips |
-| In-Process BM25S Lexical Fallback | ✅ **PASSED** | Robertson BM25 index fitted on 1,052 chunks, seamless local fallback for exact token queries |
-| Redis 8 Multi-Layer & Vector Cache | ✅ **PASSED** | `semcache:v2:v1:*` schema, intent thresholds (0.95 pricing/troubleshooting, 0.90 conceptual), LRU 512MB |
-| Cascading Reranker Support | ✅ **PASSED** | Serverless Pinecone Inference reranking with graceful local FlashRank fallback |
-| Golden Set Evaluation Gate | ✅ **PASSED** | 174 labeled benchmarks; **98.2% Recall@5** on 2026 services queries |
-| Hermetic Test Suite | ✅ **PASSED** | **240 passed, 0 failed** in 56.31s |
+| Configuration & Versioning | ✅ **PASSED** | Active corpus v1/v2, 3-layer version keys, latency budgets |
+| Redis Cache & Single-Flight Locks | ✅ **PASSED** | SET NX EX lock acquisition, Lua atomic release, TTL jitter |
+| Session Cache Pipelining | ✅ **PASSED** | Single round-trip pipelined warm-up and batch write |
+| Parent-Child Semantic Chunker | ✅ **PASSED** | 1200-token parents, 450-token children, code/table boundary safety |
+| Idempotent State & Dead-Letter Queue | ✅ **PASSED** | Content hash skip checking, DLQ error logging & replay |
+| BM25S Lexical Vector Sparse Retrieval | ✅ **PASSED** | Robertson BM25 fitted vocabulary, Pinecone sparse vectors |
+| Hybrid Multi-Namespace Retrieval | ✅ **PASSED** | Multi-namespace fan-out, adaptive alpha weights, URL dedup |
+| 30-Question Golden Evaluation Set | ✅ **PASSED** | Labeled questions across exact, conceptual, troubleshooting, and IaC |
+| model_version_config | ✅ **PASSED** | Automated check |
+| model_eval_importable | ✅ **PASSED** | Automated check |
 
 ---
 
