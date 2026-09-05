@@ -1,0 +1,80 @@
+{
+  "timestamp": "2026-09-02T07:35:07.031997+00:00",
+  "active_corpus_version": "v1",
+  "index_name": "cloud-docs",
+  "total_vector_count": 2083,
+  "namespaces": {
+    "__default__": {
+      "vector_count": 1175
+    },
+    "troubleshooting-playbooks": {
+      "vector_count": 18
+    },
+    "iac-templates": {
+      "vector_count": 14
+    },
+    "services-master": {
+      "vector_count": 811
+    },
+    "senior-engineer-knowledge": {
+      "vector_count": 65
+    }
+  },
+  "local_chunks": {
+    "total_chunks": 811,
+    "by_provider": {
+      "multi-cloud": 97,
+      "aws": 252,
+      "google-cloud": 223,
+      "azure": 239
+    },
+    "by_category": {
+      "Cloud Services Reference": 48,
+      "Lifecycle: 0. Account & Organization Setup": 10,
+      "Lifecycle: 1. Identity Foundations": 7,
+      "Lifecycle: 2. Networking Foundation": 12,
+      "Lifecycle: 3. Security Guardrails": 11,
+      "Lifecycle: 4. Compute Provisioning": 11,
+      "Lifecycle: 5. Storage": 15,
+      "Lifecycle: 6. Databases": 20,
+      "Lifecycle: 7. Application Build & CI/CD": 12,
+      "Lifecycle: 8. Containers, Serverless & Integration": 20,
+      "Lifecycle: 9. Data, Analytics & AI": 18,
+      "Lifecycle: 10. Observability & Cost Governance": 17,
+      "Lifecycle: 11. Workload & Data Migration": 12,
+      "Lifecycle: 12. Scaling & Resource Optimization": 11,
+      "Lifecycle: 13. Disaster Recovery & Backup": 6,
+      "Lifecycle: 14. Decommissioning & Resource Teardown": 11,
+      "1. Compute": 55,
+      "2. Storage": 33,
+      "3. Databases": 37,
+      "4. Networking & Content Delivery": 43,
+      "5. AI & Machine Learning": 65,
+      "6. Analytics & Big Data": 43,
+      "7. Containers & Orchestration": 17,
+      "8. Serverless & Application Integration": 24,
+      "9. Security, Identity & Compliance": 39,
+      "10. Management, Monitoring & Governance": 35,
+      "11. Developer Tools & DevOps": 32,
+      "12. Migration & Transfer": 16,
+      "13. Internet of Things (IoT)": 12,
+      "14. Media & Content Services": 12,
+      "15. Blockchain & Quantum Computing": 7,
+      "16. Cost Management, Support & Marketplace": 26,
+      "17. End-User Computing & Virtual Desktops": 10,
+      "18. Communication & Notification Services": 13,
+      "19. Domain Registration & DNS Management": 11,
+      "20. Landing Zones & Governance-as-Code": 13,
+      "21. Decommissioning & Resource Lifecycle Tools": 14,
+      "Next-Gen Compute & Specialized Silicon": 1,
+      "Next-Gen Storage & Data Services": 1,
+      "Next-Gen AI, Agents & Model Platforms": 1,
+      "Next-Gen Security & Governance": 1,
+      "Next-Gen Networking & Connectivity": 1,
+      "Next-Gen Observability & Operations": 1,
+      "Next-Gen Hybrid, Edge & Sovereign": 1,
+      "Next-Gen FinOps & Licensing": 1,
+      "Platform Architecture & Strategy": 5
+    }
+  }
+}

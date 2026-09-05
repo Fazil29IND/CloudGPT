@@ -1,0 +1,37 @@
+groups:
+  - name: cloudgpt_rag_cache_alerts
+    rules:
+      - alert: RedisCacheMissRateHigh
+        expr: |
+          (
+            sum(rate(cloudgpt_redis_cache_misses_total[5m]))
+            /
+            (sum(rate(cloudgpt_redis_cache_hits_total[5m])) + sum(rate(cloudgpt_redis_cache_misses_total[5m])))
+          ) > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          component: redis_cache
+        annotations:
+          summary: "Redis cache miss rate exceeded 80% for > 10m"
+          description: "High cache miss rate detected on layer {{ $labels.layer }}. Investigate potential cache invalidation storms or stampede."
+
+      - alert: IngestionDeadLetterQueueNonZero
+        expr: cloudgpt_ingestion_dead_letter_count > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: corpus_ingestion
+        annotations:
+          summary: "Failed chunks detected in Ingestion Dead-Letter Queue"
+          description: "{{ $value }} chunks failed embedding/upsert in corpus ingestion. Run python -m corpus.replay_dead_letter."
+
+      - alert: RAGRetrievalLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(cloudgpt_rag_stage_duration_seconds_bucket{stage="retrieval"}[5m])) by (le)) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: retrieval_pipeline
+        annotations:
+          summary: "RAG retrieval p95 latency exceeds 800ms"
+          description: "Vector search or BM25 retrieval latency is degrading pipeline responsiveness."

@@ -1,0 +1,45 @@
+# CloudGPT — Promtail ships Docker container logs (JSON) into Loki.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /positions/positions.yaml
+
+clients:
+  - url: http://cloudgpt_loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Scrape the Docker daemon's JSON log files for all containers and attach
+  # container name / compose service labels so logs are filterable in Grafana.
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["com.docker.compose.project"]
+    relabel_configs:
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: "container"
+      - source_labels: ["__meta_docker_container_log_stream"]
+        target_label: "stream"
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: "service"
+    pipeline_stages:
+      # CloudGPT emits structlog JSON (production) — parse it so request_id,
+      # user_id, level and event become first-class Loki labels/fields.
+      - json:
+          expressions:
+            level: level
+            event: event
+            request_id: request_id
+            user_id: user_id
+            logger: logger
+      - labels:
+          level:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+          fallback_types: [RFC3339]

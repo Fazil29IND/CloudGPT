@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin · Users | CloudGPT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #000000;
+      color: #ffffff;
+      padding: 32px 24px;
+    }
+
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      font-size: 22px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+    }
+
+    h1 { font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em; }
+
+    .nav { display: flex; gap: 12px; align-items: center; }
+
+    .nav a {
+      color: #8e8e93;
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid #222226;
+      background: #0c0c0e;
+      transition: all 0.15s ease;
+    }
+
+    .nav a:hover { color: #ffffff; border-color: #333338; background: #141418; }
+
+    .meta { color: #8e8e93; font-size: 13px; margin-bottom: 16px; }
+
+    .searchbar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .searchbar input {
+      flex: 1;
+      max-width: 360px;
+      padding: 10px 14px;
+      border: 1px solid #222226;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #141418;
+      color: #ffffff;
+      font-family: inherit;
+    }
+
+    .searchbar input:focus {
+      outline: 2px solid #ffffff;
+      border-color: #ffffff;
+    }
+
+    .searchbar button {
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: 1px solid #ffffff;
+      background: #ffffff;
+      color: #000000;
+      font-weight: 700;
+      font-size: 13.5px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.15s ease;
+    }
+
+    .searchbar button:hover {
+      opacity: 0.9;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #0c0c0e;
+      border: 1px solid #222226;
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 13.5px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid #1c1c20;
+    }
+
+    th {
+      color: #8e8e93;
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: #141418;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #141418; }
+
+    td a { color: #ffffff; font-weight: 600; text-decoration: underline; }
+
+    .pill {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 700;
+      border: 1px solid #333338;
+      color: #ffffff;
+      background: #141418;
+    }
+
+    .pill.active { border-color: rgba(34,197,94,.4); color: #86efac; background: rgba(34,197,94,.08); }
+    .pill.past_due { border-color: rgba(234,179,8,.4); color: #fde047; background: rgba(234,179,8,.08); }
+
+    .pagination {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 16px;
+      color: #8e8e93;
+      font-size: 13.5px;
+    }
+
+    .pagination a, .pagination span.page {
+      padding: 7px 13px;
+      border: 1px solid #222226;
+      border-radius: 8px;
+      background: #0c0c0e;
+      color: #ffffff;
+      text-decoration: none;
+    }
+
+    .pagination span.current { border-color: #ffffff; color: #000000; background: #ffffff; font-weight: 700; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <div class="topbar">
+      <a href="/dashboard" class="brand">
+        <span>CloudGPT Admin</span>
+      </a>
+      <nav class="nav">
+        <a href="/admin/users">Users</a>
+        <a href="/admin/usage">Usage</a>
+        <a href="/dashboard">Back to app</a>
+      </nav>
+    </div>
+
+    <h1>Users</h1>
+    <p class="meta">{{ total }} user{{ '' if total == 1 else 's' }} registered · page {{ page }} of {{ total_pages }}</p>
+
+    <form class="searchbar" method="get" action="/admin/users">
+      <input type="search" name="q" value="{{ search_query }}" placeholder="Search by email or name…" />
+      <button type="submit">Search</button>
+    </form>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Name</th>
+          <th>Tier</th>
+          <th>Role</th>
+          <th>Tokens (5h / day)</th>
+          <th>Subscription</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td><a href="/admin/users/{{ u.id }}">{{ u.email }}</a></td>
+          <td>{{ u.name or '—' }}</td>
+          <td><span class="pill">{{ u.tier }}</span></td>
+          <td>{{ u.role }}{% if u.is_admin %} ★{% endif %}</td>
+          <td>{{ u.tokens_used_5h or 0 }} / {{ u.tokens_used_day or 0 }}</td>
+          <td>
+            {% if u.subscription_status %}
+            <span class="pill {{ u.subscription_status }}">{{ u.subscription_plan }} · {{ u.subscription_status }}</span>
+            {% else %}
+            —
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">No users found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      {% if page > 1 %}<a href="/admin/users?page={{ page - 1 }}&q={{ search_query }}">← Prev</a>{% endif %}
+      <span class="page current">Page {{ page }} / {{ total_pages }}</span>
+      {% if page < total_pages %}<a href="/admin/users?page={{ page + 1 }}&q={{ search_query }}">Next →</a>{% endif %}
+    </div>
+
+  </div>
+</body>
+
+</html>

@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en" class="pricing-html">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Terms & Conditions | CloudGPT</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/chat.css">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <style>
+        .legal-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 48px 24px 96px;
+            color: var(--text-primary, #ffffff);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.75;
+        }
+        .legal-header {
+            margin-bottom: 40px;
+            border-bottom: 1px solid var(--border-color, #222226);
+            padding-bottom: 28px;
+        }
+        .legal-header h1 {
+            font-size: 2.25rem;
+            font-weight: 800;
+            color: #ffffff;
+            margin-top: 14px;
+            letter-spacing: -0.03em;
+        }
+        .legal-date {
+            color: #a1a1aa;
+            font-size: 0.88rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .legal-summary-box {
+            background: #0c0c0e;
+            border: 1px solid #222226;
+            border-left: 3px solid #ffffff;
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin-bottom: 40px;
+            font-size: 0.92rem;
+            color: #d4d4d8;
+        }
+        .legal-summary-box strong {
+            color: #ffffff;
+        }
+        .legal-section {
+            margin-bottom: 36px;
+        }
+        .legal-section h2 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 14px;
+            letter-spacing: -0.015em;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+        .legal-section p {
+            color: #a1a1aa;
+            margin-bottom: 14px;
+            font-size: 0.95rem;
+        }
+        .legal-section strong {
+            color: #ffffff;
+        }
+        .legal-section ul {
+            padding-left: 24px;
+            margin-bottom: 16px;
+            color: #a1a1aa;
+            font-size: 0.95rem;
+        }
+        .legal-section li {
+            margin-bottom: 8px;
+        }
+        .legal-caps {
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 0.02em;
+            color: #e4e4e7;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid #222226;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin: 16px 0;
+            line-height: 1.7;
+        }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 20px;
+            transition: opacity 0.2s;
+        }
+        .back-link:hover {
+            opacity: 0.8;
+        }
+        .legal-footer {
+            margin-top: 56px;
+            padding-top: 28px;
+            border-top: 1px solid #222226;
+            font-size: 0.88rem;
+            color: #71717a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .legal-footer a {
+            color: #a1a1aa;
+            text-decoration: none;
+        }
+        .legal-footer a:hover {
+            color: #ffffff;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body class="pricing-body">
+    <div class="legal-container">
+        <a class="back-link" id="back-nav-link" href="/" onclick="if(window.history.length > 1){window.history.back(); return false;}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            <span>Back</span>
+        </a>
+        
+        <header class="legal-header">
+            <div class="legal-date">Last Updated: September 4, 2026 · Effective Immediately</div>
+            <h1>Terms & Conditions</h1>
+        </header>
+
+        <div class="legal-summary-box">
+            <strong>IMPORTANT LEGAL NOTICE:</strong> PLEASE READ THESE TERMS & CONDITIONS CAREFULLY BEFORE ACCESSING OR USING CLOUDGPT. SECTION 6 CONTAINS A MANDATORY BINDING INDIVIDUAL ARBITRATION AGREEMENT AND CLASS ACTION WAIVER THAT REQUIRE DISPUTES TO BE RESOLVED ON AN INDIVIDUAL BASIS RATHER THAN THROUGH JURY TRIALS OR CLASS ACTIONS. SECTION 3 AND SECTION 4 SET FORTH COMPLETE IMMUNITY REGARDING THIRD-PARTY CLOUD PROVIDER INVOICES, DOWNTIME, OR ARCHITECTURAL FAILURES.
+        </div>
+
+        <div class="legal-section">
+            <h2>1. Acceptance of Terms & Conditions & Legal Authority</h2>
+            <p>These Terms & Conditions ("Terms", "Agreement") constitute a legally binding contract between you (either an individual or the legal entity on whose behalf you act, "User", "you", or "your") and CloudGPT ("CloudGPT", "Company", "we", "us", or "our"), governing all access to and use of the CloudGPT website, software, APIs, multi-cloud intelligence platform, and associated services (collectively, the "Service").</p>
+            <p>By creating an account, clicking "Sign in", "Sign up", "Subscribe", or otherwise accessing or utilizing the Service, you represent and warrant that (a) you are of legal age of majority in your jurisdiction, (b) you have full authority to bind yourself or your organization to these Terms, and (c) you unconditionally accept and agree to be bound by every provision herein. If you do not agree to all terms, you are expressly prohibited from using the Service and must immediately cease access.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>2. Nature of Service: Heuristic Research Tool & Non-Fiduciary Status</h2>
+            <p>CloudGPT is an automated cloud architecture intelligence, documentation synthesis, and cost modeling platform. The Service aggregates publicly available documentation, pricing APIs, and architectural specifications across cloud providers (including, without limitation, Amazon Web Services, Google Cloud Platform, and Microsoft Azure).</p>
+            <p><strong>Strictly Informational & Non-Advisory:</strong> All outputs, topologies, code snippets, architectural comparisons, capacity plans, reasoning tokens, and pricing estimates generated by the Service are provided strictly for heuristic, preliminary research purposes. CloudGPT is NOT a licensed professional engineering firm, accredited cloud architecture certifier, financial advisor, security auditor, or legal counsel.</p>
+            <p>No confidential, fiduciary, attorney-client, advisory, or special relationship is created between you and CloudGPT through your use of the Service. You retain the sole and exclusive burden to independently review, test, audit, and validate any architecture, Terraform template, script, firewall rule, or cost calculation with certified human engineers prior to executing or deploying them in development, staging, or production environments.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>3. Cloud Infrastructure & Third-Party Billing Immunity</h2>
+            <p>Cloud service providers (AWS, GCP, Azure, and others) frequently update SKUs, regional rate cards, egress formulas, API endpoints, deprecation timelines, and terms of use without advance notice. CloudGPT makes reasonable automated efforts to synthesize available data but provides NO GUARANTEE of real-time pricing parity or configuration accuracy.</p>
+            <p><strong>Absolute Cloud Bill & Outage Immunity:</strong> Under no circumstance shall CloudGPT, its creators, affiliates, or licensors be held responsible or liable, financially or legally, for:</p>
+            <ul>
+                <li>Any cloud provider invoices, billing overages, compute charges, data transfer/egress fees, or resource runaway incurred on your third-party cloud accounts;</li>
+                <li>Any infrastructure downtime, system failures, service outages, latency spikes, or failed workload migrations;</li>
+                <li>Any security vulnerabilities, misconfigured IAM roles, exposed storage buckets, data loss, corruption, or regulatory non-compliance resulting from your application of Service outputs;</li>
+                <li>Any discrepancies between CloudGPT cost estimates and actual cloud billing charges.</li>
+            </ul>
+            <p>You assume complete and unreserved risk for any and all deployments, cloud provisioning commands, and infrastructure spending you execute.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>4. Absolute Disclaimer of Warranties ("AS IS" & "AS AVAILABLE")</h2>
+            <div class="legal-caps">
+                TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SERVICE, DOCUMENTATION, ARCHITECTURAL BLUEPRINTS, AND ALL GENERATED CONTENT ARE PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS, WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND. CLOUDGPT EXPRESSLY DISCLAIMS ALL WARRANTIES, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, QUIET ENJOYMENT, ACCURACY, SYSTEM INTEGRATION, NON-INFRINGEMENT, AND ANY WARRANTIES ARISING OUT OF COURSE OF DEALING, USAGE, OR TRADE PRACTICE.
+            </div>
+            <p>WITHOUT LIMITING THE FOREGOING, CLOUDGPT DOES NOT WARRANT THAT (A) THE SERVICE WILL MEET YOUR REQUIREMENTS OR EXPECTATIONS, (B) OPERATION OF THE SERVICE WILL BE UNINTERRUPTED, TIMELY, SECURE, ERROR-FREE, OR FREE FROM HARMFUL CODE, OR (C) ANY DEFECTS OR ERRORS IN THE SERVICE OR CONTENT WILL BE CORRECTED.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>5. Strict Limitation of Liability</h2>
+            <div class="legal-caps">
+                TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL CLOUDGPT, ITS DIRECTORS, OFFICERS, EMPLOYEES, AFFILIATES, AGENTS, CONTRACTORS, OR LICENSORS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, PUNITIVE, OR CONSEQUENTIAL DAMAGES WHATSOEVER, INCLUDING BUT NOT LIMITED TO DAMAGES FOR LOSS OF PROFITS, LOSS OF REVENUE, LOSS OF DATA OR CODE, LOSS OF BUSINESS OPPORTUNITY, REPUTATIONAL DAMAGE, WORK STOPPAGE, SYSTEM CRASHES, COST OF PROCURING SUBSTITUTE GOODS OR SERVICES, OR CLOUD BILLING SURCHARGES, ARISING OUT OF OR IN CONNECTION WITH THESE TERMS OR YOUR USE OF OR INABILITY TO USE THE SERVICE, REGARDLESS OF THE THEORY OF LIABILITY (WHETHER IN CONTRACT, TORT, STRICT LIABILITY, NEGLIGENCE, OR OTHERWISE), EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+            </div>
+            <p><strong>AGGREGATE MONETARY LIABILITY CAP:</strong> TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE TOTAL AGGREGATE LIABILITY OF CLOUDGPT FOR ALL CLAIMS OF ANY KIND ARISING UNDER OR RELATED TO THIS AGREEMENT OR THE SERVICE SHALL BE STRICTLY LIMITED TO AND SHALL NOT EXCEED THE GREATER OF: (A) THE TOTAL FEES ACTUALLY PAID BY YOU TO CLOUDGPT IN THE TWELVE (12) MONTHS IMMEDIATELY PRECEDING THE EVENT GIVING RISE TO LIABILITY, OR (B) FIFTY UNITED STATES DOLLARS ($50.00 USD). THE EXISTENCE OF MULTIPLE CLAIMS WILL NOT ENLARGE OR EXTEND THIS LIMIT.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>6. Mandatory Binding Arbitration & Class Action Waiver</h2>
+            <p><strong>PLEASE READ THIS SECTION CAREFULLY — IT MATERIALLY AFFECTS YOUR LEGAL RIGHTS, INCLUDING YOUR RIGHT TO FILE A LAWSUIT IN COURT.</strong></p>
+            <p><strong>Mandatory Individual Arbitration:</strong> You and CloudGPT mutually agree that any dispute, claim, controversy, or cause of action arising out of or relating to these Terms, the Service, billing, or any communications between us (whether based in contract, statute, regulation, ordinance, tort, fraud, misrepresentation, or any other legal theory) shall be resolved exclusively through final and binding individual arbitration administered by the American Arbitration Association ("AAA") under its Consumer Arbitration Rules or Commercial Arbitration Rules, as applicable.</p>
+            <p><strong>Class Action Waiver:</strong> YOU AND CLOUDGPT EXPRESSLY AGREE THAT ALL DISPUTES SHALL BE ARBITRATED ON AN INDIVIDUAL BASIS ONLY. NEITHER YOU NOR CLOUDGPT SHALL BE ENTITLED TO JOIN OR CONSOLIDATE CLAIMS BY OR AGAINST OTHER PERSONS OR ENTITIES, OR ARBITRATE OR LITIGATE ANY CLAIM AS A REPRESENTATIVE, CLASS ACTION, OR IN A PRIVATE ATTORNEY GENERAL CAPACITY. THE ARBITRATOR HAS NO AUTHORITY TO CONDUCT CLASS OR CONSOLIDATED PROCEEDINGS.</p>
+            <p><strong>Jury Trial Waiver:</strong> YOU AND CLOUDGPT VOLUNTARILY AND KNOWINGLY WAIVE ANY CONSTITUTIONAL AND STATUTORY RIGHTS TO SUE IN COURT AND HAVE A TRIAL IN FRONT OF A JUDGE OR A JURY.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>7. Comprehensive Indemnification by User</h2>
+            <p>You agree to defend, indemnify, and hold harmless CloudGPT, its parent entities, subsidiaries, affiliates, officers, directors, shareholders, employees, contractors, agents, licensors, and service providers from and against any and all claims, demands, liabilities, damages, judgments, awards, losses, costs, expenses, and fees (including reasonable attorneys' fees and expert witness fees) arising out of or relating to:</p>
+            <ul>
+                <li>Your access to, use of, or reliance upon the Service or any generated architectural recommendations;</li>
+                <li>Your violation of these Terms, acceptable use policies, or applicable laws, treaties, or regulations;</li>
+                <li>Any infrastructure, software deployment, cloud provision, security breach, or system failure implemented by you or your organization;</li>
+                <li>Any dispute between you and any third-party cloud service provider (e.g., AWS, GCP, Azure);</li>
+                <li>Any content, query, code, or data you submit to or upload via the Service.</li>
+            </ul>
+        </div>
+
+        <div class="legal-section">
+            <h2>8. Subscriptions, Token Quotas, Billing & Cancellations</h2>
+            <p><strong>Plan Tiers & Quotas:</strong> CloudGPT offers tiered plans (Lite, Pro, Max). Access to reasoning capabilities, multi-stage retrieval, and token quotas are governed by your subscribed plan. Usage is monitored across rolling time windows (5-hour, daily, weekly, monthly). Once a quota window is exhausted, queries are queued or throttled until the rolling window refreshes or you upgrade.</p>
+            <p><strong>Billing & Automatic Renewal:</strong> Paid subscriptions are billed in advance on a recurring monthly or annual basis via our authorized payment processor (Stripe or Razorpay). You authorize CloudGPT to charge your designated payment method on each renewal date until canceled.</p>
+            <p><strong>Cancellation & Refund Policy:</strong> You may cancel your subscription at any time via the Billing dashboard. Cancellations take effect at the conclusion of your current prepaid billing period; you retain access through that date. Subscriptions are prepaid and non-refundable, and no partial or prorated refunds are issued for unused intervals, tokens, or mid-cycle cancellations, except where required by mandatory local law.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>9. Intellectual Property, Non-Extraction & Acceptable Use</h2>
+            <p><strong>CloudGPT Ownership:</strong> All intellectual property rights in the Service, including proprietary algorithms, user interfaces, system prompts, orchestration pipelines, and design assets, remain the exclusive property of CloudGPT and its licensors.</p>
+            <p><strong>Strict Anti-Abuse Restrictions:</strong> You agree NOT to:</p>
+            <ul>
+                <li>Reverse-engineer, decompile, disassemble, or derive the underlying logic, proprietary weights, or prompt templates of the Service;</li>
+                <li>Scrape, extract, harvest, or systematically download knowledge base embeddings, vector data, or corpus documents;</li>
+                <li>Use Service outputs to train, fine-tune, or benchmark a competing multi-cloud architecture AI service;</li>
+                <li>Circumvent quota limits, rate limiters, session tokens, or authentication mechanisms;</li>
+                <li>Transmit malicious code, denial-of-service payloads, or abusive automated queries.</li>
+            </ul>
+        </div>
+
+        <div class="legal-section">
+            <h2>10. Upstream AI Providers & Force Majeure</h2>
+            <p>You acknowledge that CloudGPT utilizes upstream foundation model APIs, cloud documentation hosts, and search indexing services. We are not liable for any delay, failure in performance, degradation, or downtime resulting from upstream service outages, rate limit constraints, internet routing failures, government actions, natural disasters, or events beyond our reasonable control.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>11. Statute of Limitations & Governing Law</h2>
+            <p><strong>One-Year Limitation Period:</strong> YOU AGREE THAT REGARDLESS OF ANY STATUTE OR LAW TO THE CONTRARY, ANY CLAIM OR CAUSE OF ACTION ARISING OUT OF OR RELATED TO THE SERVICE OR THESE TERMS MUST BE FILED WITHIN ONE (1) YEAR AFTER SUCH CLAIM OR CAUSE OF ACTION AROSE, OR IT SHALL BE FOREVER BARRED.</p>
+            <p><strong>Governing Law:</strong> These Terms shall be governed by and construed in accordance with the laws of the State of Delaware, United States, without giving effect to any principles of conflicts of law.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>12. Severability & Entire Agreement</h2>
+            <p>These Terms, together with our Privacy Policy, constitute the entire agreement between you and CloudGPT regarding the Service. If any provision of these Terms is found to be unlawful, void, or unenforceable, that provision shall be severed and shall not affect the validity and enforceability of any remaining provisions.</p>
+        </div>
+
+        <div class="legal-section">
+            <h2>13. Contact & Notice</h2>
+            <p>Legal notices, inquiries, or claims regarding these Terms must be submitted in writing to: <a href="mailto:legal@cloudgpt.local" style="color: #ffffff; text-decoration: underline;">legal@cloudgpt.local</a>.</p>
+        </div>
+
+        <footer class="legal-footer">
+            <span>© 2026 CloudGPT. All rights reserved.</span>
+            <div>
+                <a href="/pricing">Pricing</a> · 
+                <a href="/privacy">Privacy Policy</a> · 
+                <a href="/billing">Billing</a>
+            </div>
+        </footer>
+    </div>
+    <script>
+        const backLink = document.getElementById('back-nav-link');
+        if (backLink && document.referrer) {
+            backLink.href = document.referrer;
+        }
+    </script>
+</body>
+</html>

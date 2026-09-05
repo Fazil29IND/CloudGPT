@@ -1,0 +1,127 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 101,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "Redis Cache Hit Rate by Layer (Plan, Retrieval, Answer, Session)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(cloudgpt_redis_cache_hits_total[5m])) by (layer) / (sum(rate(cloudgpt_redis_cache_hits_total[5m])) by (layer) + sum(rate(cloudgpt_redis_cache_misses_total[5m])) by (layer)) * 100",
+          "legendFormat": "{{layer}} hit rate (%)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "title": "Redis Operation Latency (p50, p95, p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(cloudgpt_redis_latency_seconds_bucket[5m])) by (le, op)) * 1000",
+          "legendFormat": "{{op}} p50 (ms)"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(cloudgpt_redis_latency_seconds_bucket[5m])) by (le, op)) * 1000",
+          "legendFormat": "{{op}} p95 (ms)"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(cloudgpt_redis_latency_seconds_bucket[5m])) by (le, op)) * 1000",
+          "legendFormat": "{{op}} p99 (ms)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "title": "RAG Stage Durations (Classification, Retrieval, Web Search, Context Assembly, LLM Generate)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(cloudgpt_rag_stage_duration_seconds_bucket[5m])) by (le, stage)) * 1000",
+          "legendFormat": "{{stage}} p95 (ms)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "title": "Single-Flight Lock Contention & Dead-Letter Ingestion Queue",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(cloudgpt_redis_lock_acquired_total[5m])",
+          "legendFormat": "Locks Acquired / sec"
+        },
+        {
+          "expr": "rate(cloudgpt_redis_lock_waited_total[5m])",
+          "legendFormat": "Locks Waited / sec"
+        },
+        {
+          "expr": "cloudgpt_ingestion_dead_letter_count",
+          "legendFormat": "DLQ Failed Chunks Count"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["cloudgpt", "redis", "rag", "performance"],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "title": "CloudGPT Redis Cache & RAG Pipeline Telemetry",
+  "uid": "cloudgpt-redis-rag-telemetry"
+}

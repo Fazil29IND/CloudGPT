@@ -1,0 +1,34 @@
+# CloudGPT — Caddy reverse proxy with automatic TLS (ACME / Let's Encrypt).
+# For DOMAIN=localhost Caddy issues a locally-trusted internal certificate.
+
+{
+	# Email for ACME account registration (optional, recommended in production).
+	# email you@example.com
+}
+
+{$DOMAIN} {
+	# ── CloudGPT application ────────────────────────────────────────────────
+	reverse_proxy {$APP_UPSTREAM}
+
+	# ── Security headers (supplement app-level headers) ─────────────────────
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# ── Edge rate limiting for auth-sensitive paths ─────────────────────────
+	# Caddy core has no built-in limiter; the app's Redis sliding-window
+	# limiter (core/rate_limit.py) remains the authoritative control.
+	# A rate_limit plugin module can be added to the Caddy build if desired.
+
+	# ── Compression ─────────────────────────────────────────────────────────
+	encode gzip zstd
+
+	log {
+		output stdout
+		format console
+	}
+}

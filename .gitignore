@@ -1,0 +1,85 @@
+# Environment & secrets
+.env
+*.env.local
+.env.*
+!.env.example
+!.env.compose.example
+
+# Sensitive files
+Developer Accounts.txt
+CloudGPT Team Management/
+*Developer Accounts*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# Virtual Environments
+.venv/
+venv/
+env/
+.venv*/
+
+# Testing & Linters
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+scratch/
+.cursor/
+
+# Data (large crawled data)
+data/raw/
+data/cleaned/
+data/chunks/
+data/metadata/
+
+# Vector DB (Pinecone is cloud-managed, no local storage)
+
+# ML model cache
+.cache/
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Local databases
+*.sqlite3
+*.db
+
+# Process files
+*.pid
+*.sock
+
+# Node (if any frontend tooling)
+node_modules/
+package-lock.json
+
+# Generated lockfiles
+requirements.lock.txt
+
+# Docker
+.dockerignore
+docker-compose.override.yml

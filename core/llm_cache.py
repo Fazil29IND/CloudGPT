@@ -1,0 +1,369 @@
+"""
+LLM Prompt and Response Multi-Layer In-Memory Caching using Redis.
+
+Three explicit versioned layers:
+- Layer 1 (Plan): Query classification / routing plans
+- Layer 2 (Retrieval): Hybrid retrieval + reranked chunk lists
+- Layer 3 (Answer): Final synthesized LLM responses with source citations
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import random
+import time
+from typing import Any, Optional
+
+from config import get_settings
+from core.memory_cache import get_memory_cache
+from core.redis_client import redis_client
+from metrics import (
+    MEMORY_CACHE_HITS,
+    MEMORY_CACHE_MISSES,
+    REDIS_CACHE_HITS,
+    REDIS_CACHE_MISSES,
+    REDIS_LATENCY,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _jitter_ttl(base_ttl: int, jitter_pct: float = 0.15) -> int:
+    """Add a small randomized jitter to TTL to prevent cache stampedes."""
+    if base_ttl <= 0:
+        return base_ttl
+    jitter = random.randint(0, max(1, int(base_ttl * jitter_pct)))
+    return base_ttl + jitter
+
+
+# ─── Layer 1: Query Plan (Classification) ───────────────────────────────────
+
+def _plan_key(query_normalized: str, router_version: str) -> str:
+    digest = hashlib.sha256(query_normalized.encode("utf-8")).hexdigest()[:24]
+    return f"rag:v2:plan:{router_version}:{digest}"
+
+
+async def get_cached_query_plan(
+    query: str,
+    settings: Any = None,
+) -> Optional[dict[str, Any]]:
+    """Retrieve cached query classification plan."""
+    if not redis_client.is_available:
+        return None
+
+    settings = settings or get_settings()
+    router_version = getattr(settings, "cache_router_version", "v1")
+    key = _plan_key(query.strip().lower(), router_version)
+
+    t0 = time.perf_counter()
+    data = await redis_client.get_json(key)
+    elapsed = time.perf_counter() - t0
+    REDIS_LATENCY.labels(op="get_plan").observe(elapsed)
+
+    if data is not None:
+        REDIS_CACHE_HITS.labels(layer="plan").inc()
+        logger.debug("Plan Cache Hit for key: %s", key)
+    else:
+        REDIS_CACHE_MISSES.labels(layer="plan").inc()
+
+    return data
+
+
+async def set_cached_query_plan(
+    query: str,
+    plan: dict[str, Any],
+    settings: Any = None,
+    ttl_seconds: int = 900,
+) -> bool:
+    """Cache query classification plan in Redis."""
+    if not redis_client.is_available:
+        return False
+
+    settings = settings or get_settings()
+    router_version = getattr(settings, "cache_router_version", "v1")
+    key = _plan_key(query.strip().lower(), router_version)
+    actual_ttl = _jitter_ttl(ttl_seconds)
+
+    t0 = time.perf_counter()
+    success = await redis_client.set_json(key, plan, ex=actual_ttl)
+    elapsed = time.perf_counter() - t0
+    REDIS_LATENCY.labels(op="set_plan").observe(elapsed)
+
+    return success
+
+
+# ─── Layer 2: Retrieval Result ──────────────────────────────────────────────
+
+def _retrieval_key(
+    query_normalized: str,
+    corpus_version: str,
+    embedding_model: str,
+    provider_filter: Optional[str] = None,
+) -> str:
+    payload = f"{corpus_version}:{embedding_model}:{provider_filter or 'all'}:{query_normalized}"
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+    return f"rag:v2:retrieval:{digest}"
+
+
+async def get_cached_retrieval_result(
+    query: str,
+    provider_filter: Optional[str] = None,
+    settings: Any = None,
+) -> Optional[list[dict[str, Any]]]:
+    """Retrieve cached retrieval + reranking candidate results."""
+    if not redis_client.is_available:
+        return None
+
+    settings = settings or get_settings()
+    corpus_version = getattr(settings, "cache_corpus_version", "v1")
+    embedding_model = getattr(settings, "embedding_model", "default")
+    key = _retrieval_key(query.strip().lower(), corpus_version, embedding_model, provider_filter)
+
+    t0 = time.perf_counter()
+    data = await redis_client.get_json(key)
+    elapsed = time.perf_counter() - t0
+    REDIS_LATENCY.labels(op="get_retrieval").observe(elapsed)
+
+    if data is not None:
+        REDIS_CACHE_HITS.labels(layer="retrieval").inc()
+        logger.debug("Retrieval Cache Hit for key: %s", key)
+    else:
+        REDIS_CACHE_MISSES.labels(layer="retrieval").inc()
+
+    return data
+
+
+async def set_cached_retrieval_result(
+    query: str,
+    results: list[dict[str, Any]],
+    provider_filter: Optional[str] = None,
+    settings: Any = None,
+    ttl_seconds: int = 21600,
+) -> bool:
+    """Cache retrieval results in Redis (default TTL: 6 hours with jitter)."""
+    if not redis_client.is_available:
+        return False
+
+    settings = settings or get_settings()
+    corpus_version = getattr(settings, "cache_corpus_version", "v1")
+    embedding_model = getattr(settings, "embedding_model", "default")
+    key = _retrieval_key(query.strip().lower(), corpus_version, embedding_model, provider_filter)
+    actual_ttl = _jitter_ttl(ttl_seconds)
+
+    t0 = time.perf_counter()
+    success = await redis_client.set_json(key, results, ex=actual_ttl)
+    elapsed = time.perf_counter() - t0
+    REDIS_LATENCY.labels(op="set_retrieval").observe(elapsed)
+
+    return success
+
+
+# ─── Layer 3: Final Answer ──────────────────────────────────────────────────
+
+def _answer_key(
+    query_normalized: str,
+    model: str,
+    mode: str,
+    corpus_version: str,
+    prompt_version: str,
+    provider_filter: Optional[str] = None,
+    history_hash: Optional[str] = None,
+) -> str:
+    payload = f"{prompt_version}:{model}:{mode}:{corpus_version}:{provider_filter or 'all'}:{query_normalized}:{history_hash or 'none'}"
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+    return f"rag:v2:answer:{digest}"
+
+
+async def get_cached_answer(
+    query: str,
+    model: str = "",
+    mode: str = "",
+    provider_filter: Optional[str] = None,
+    history_hash: Optional[str] = None,
+    settings: Any = None,
+) -> Optional[dict[str, Any]]:
+    """Retrieve cached final LLM answer response."""
+    settings = settings or get_settings()
+    corpus_version = getattr(settings, "cache_corpus_version", "v1")
+    prompt_version = getattr(settings, "cache_prompt_version", "v1")
+    normalized_query = query.strip().lower()
+
+    key = _answer_key(
+        query_normalized=normalized_query,
+        model=model,
+        mode=mode or "default",
+        corpus_version=corpus_version,
+        prompt_version=prompt_version,
+        provider_filter=provider_filter,
+        history_hash=history_hash,
+    )
+
+    # 1. Check L1 in-process memory cache first
+    l1 = get_memory_cache()
+    if getattr(settings, "enable_l1_cache", True):
+        l1_result = l1.get(key)
+        if l1_result is not None:
+            MEMORY_CACHE_HITS.labels(layer="l1_answer").inc()
+            logger.debug("L1 Answer Cache Hit for key: %s", key)
+            return l1_result
+        MEMORY_CACHE_MISSES.labels(layer="l1_answer").inc()
+
+    if not redis_client.is_available:
+        return None
+
+    # 2. Check L2 Redis cache
+    t0 = time.perf_counter()
+    data = await redis_client.get_json(key)
+    elapsed = time.perf_counter() - t0
+    REDIS_LATENCY.labels(op="get_answer").observe(elapsed)
+
+    # Fallback to v1 legacy key for zero-downtime transition if not found in v2
+    if data is None:
+        legacy_key = generate_llm_cache_key(
+            query=query, model=model, provider_filter=provider_filter, mode=mode, history_hash=history_hash
+        )
+        data = await redis_client.get_json(legacy_key)
+
+    if data is not None:
+        REDIS_CACHE_HITS.labels(layer="answer").inc()
+        logger.debug("Answer Cache Hit for key: %s", key)
+        # Backfill L1
+        if getattr(settings, "enable_l1_cache", True):
+            l1_ttl = getattr(settings, "memory_cache_ttl_seconds", 60)
+            l1.set(key, data, ttl=l1_ttl)
+    else:
+        REDIS_CACHE_MISSES.labels(layer="answer").inc()
+
+    return data
+
+
+async def set_cached_answer(
+    query: str,
+    response_payload: dict[str, Any],
+    model: str = "",
+    mode: str = "",
+    provider_filter: Optional[str] = None,
+    history_hash: Optional[str] = None,
+    settings: Any = None,
+    ttl_seconds: Optional[int] = None,
+) -> bool:
+    """Cache final LLM answer in L1 memory and Redis with TTL jitter."""
+    settings = settings or get_settings()
+    corpus_version = getattr(settings, "cache_corpus_version", "v1")
+    prompt_version = getattr(settings, "cache_prompt_version", "v1")
+    normalized_query = query.strip().lower()
+
+    key = _answer_key(
+        query_normalized=normalized_query,
+        model=model,
+        mode=mode or "default",
+        corpus_version=corpus_version,
+        prompt_version=prompt_version,
+        provider_filter=provider_filter,
+        history_hash=history_hash,
+    )
+
+    # Write to L1 memory cache
+    if getattr(settings, "enable_l1_cache", True):
+        l1_ttl = getattr(settings, "memory_cache_ttl_seconds", 60)
+        get_memory_cache().set(key, response_payload, ttl=l1_ttl)
+
+    if not redis_client.is_available:
+        return True
+
+    base_ttl = ttl_seconds if ttl_seconds is not None else settings.redis_cache_ttl_seconds
+    actual_ttl = _jitter_ttl(base_ttl)
+
+    t0 = time.perf_counter()
+    success = await redis_client.set_json(key, response_payload, ex=actual_ttl)
+    elapsed = time.perf_counter() - t0
+    REDIS_LATENCY.labels(op="set_answer").observe(elapsed)
+
+    return success
+
+
+async def invalidate_corpus_cache(new_corpus_version: str = "v2") -> int:
+    """Optionally evict stale Layer-2 (retrieval) and Layer-3 (answer) keys early.
+
+    Natural invalidation occurs via CACHE_CORPUS_VERSION bump in Settings, but this
+    allows an operator to free memory immediately without touching session or tool keys.
+    """
+    if not redis_client.is_available:
+        return 0
+
+    client = getattr(redis_client, "_client", None)
+    if client is None:
+        return 0
+
+    evicted = 0
+    patterns = ["rag:v2:retrieval:*", "rag:v2:answer:*", "semcache:*"]
+    for pattern in patterns:
+        cursor = 0
+        while True:
+            cursor, keys = await client.scan(cursor=cursor, match=pattern, count=100)
+            if keys:
+                await client.delete(*keys)
+                evicted += len(keys)
+            if cursor == 0:
+                break
+    logger.info(
+        "llm_cache.corpus_cache_invalidated new_version=%s evicted_keys=%s",
+        new_corpus_version,
+        evicted,
+    )
+    return evicted
+
+
+# ─── Backward Compatibility Shims ──────────────────────────────────────────
+
+def generate_llm_cache_key(
+    query: str,
+    model: str = "",
+    provider_filter: Optional[str] = None,
+    mode: str = "",
+    history_hash: Optional[str] = None,
+) -> str:
+    """Legacy deterministic SHA-256 cache key for an LLM query."""
+    normalized_query = query.strip().lower()
+    payload = f"{model}:{mode or 'default'}:{provider_filter or 'all'}:{normalized_query}:{history_hash or 'none'}"
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"llm_cache:{digest}"
+
+
+async def get_cached_llm_response(
+    query: str,
+    model: str = "",
+    provider_filter: Optional[str] = None,
+    mode: str = "",
+    history_hash: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """Backward-compatible shim calling get_cached_answer."""
+    return await get_cached_answer(
+        query=query,
+        model=model,
+        mode=mode,
+        provider_filter=provider_filter,
+        history_hash=history_hash,
+    )
+
+
+async def set_cached_llm_response(
+    query: str,
+    response_payload: dict[str, Any],
+    model: str = "",
+    provider_filter: Optional[str] = None,
+    mode: str = "",
+    history_hash: Optional[str] = None,
+    ttl_seconds: Optional[int] = None,
+) -> bool:
+    """Backward-compatible shim calling set_cached_answer."""
+    return await set_cached_answer(
+        query=query,
+        response_payload=response_payload,
+        model=model,
+        mode=mode,
+        provider_filter=provider_filter,
+        history_hash=history_hash,
+        ttl_seconds=ttl_seconds,
+    )

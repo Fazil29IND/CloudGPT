@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="csrf-token" content="{{ csrf_token }}" />
+  <meta name="payment-provider" content="{{ payment_provider }}" />
+  <title>CloudGPT — Account & Billing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/chat.css" />
+  <style>
+    /* ── Monochrome High-Contrast Enterprise Obsidian Theme ── */
+    :root {
+      --bg-base: #000000;
+      --bg-surface: #0c0c0e;
+      --bg-subsurface: #141418;
+      --bg-card: #101014;
+      --bg-hover: #1c1c22;
+      --border-subtle: #222226;
+      --border-strong: #333338;
+      --border-focus: #4e4e56;
+      --text-primary: #ffffff;
+      --text-secondary: #94949e;
+      --text-muted: #62626a;
+      --accent-white: #ffffff;
+      --accent-black: #000000;
+      --accent-emerald: #10b981;
+      --accent-emerald-bg: rgba(16, 185, 129, 0.12);
+      --accent-emerald-border: rgba(16, 185, 129, 0.28);
+    }
+
+    body.billing-body {
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      line-height: 1.5;
+      overflow-y: auto;
+      height: auto;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .billing-container {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 5rem;
+    }
+
+    /* ── Top Bar ── */
+    .billing-top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .nav-back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .nav-back-link:hover {
+      color: var(--text-primary);
+    }
+
+    .user-account-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+
+    .user-account-badge strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    /* ── Page Header ── */
+    .billing-header {
+      margin-bottom: 2.5rem;
+    }
+
+    .billing-eyebrow {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .billing-title {
+      font-size: 2.25rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.03em;
+      margin: 0 0 0.5rem;
+    }
+
+    .billing-subtitle {
+      font-size: 1rem;
+      color: var(--text-secondary);
+      margin: 0;
+      max-width: 720px;
+    }
+
+    /* ── Current Plan Card ── */
+    .current-plan-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2.5rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .plan-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      margin-bottom: 1.75rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .plan-badge-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      flex-wrap: wrap;
+    }
+
+    .plan-tag {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-subsurface);
+      color: var(--text-primary);
+    }
+
+    .status-pill.active-pro {
+      border-color: var(--accent-emerald-border);
+      background: var(--accent-emerald-bg);
+      color: #a7f3d0;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+      flex-shrink: 0;
+    }
+
+    .status-dot.green-pulse {
+      box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+    }
+
+    .plan-price-detail {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+
+    .plan-price-period {
+      font-size: 0.85rem;
+      font-weight: 400;
+      color: var(--text-secondary);
+      margin-top: 0.2rem;
+    }
+
+    /* ── Quota Metrics Grid ── */
+    .quota-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .quota-box {
+      background: var(--bg-subsurface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1.25rem;
+      transition: border-color 0.2s ease;
+    }
+
+    .quota-box:hover {
+      border-color: var(--border-strong);
+    }
+
+    .quota-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .quota-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .quota-icon {
+      color: var(--text-muted);
+    }
+
+    .quota-numbers {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .quota-used {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .quota-limit {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #232328;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--text-primary);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    .model-access-info {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      background: var(--bg-subsurface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      font-size: 0.9rem;
+    }
+
+    .model-access-label {
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .model-access-pill {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      padding: 0.35rem 0.85rem;
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-weight: 600;
+      font-size: 0.85rem;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── ROI / Overspend Prevention Callout ── */
+    .roi-callout-card {
+      background: linear-gradient(180deg, #121217 0%, #0c0c0e 100%);
+      border: 1px solid var(--border-strong);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 3rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 2rem;
+      align-items: center;
+    }
+
+    .roi-content h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .roi-content p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin: 0 0 1.25rem;
+      max-width: 700px;
+    }
+
+    .roi-features-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+
+    .roi-feature-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+    }
+
+    .roi-feature-item svg {
+      color: #22c55e;
+      flex-shrink: 0;
+    }
+
+    /* ── Section Title Box ── */
+    .section-title-box {
+      margin-bottom: 1.5rem;
+    }
+
+    .section-title-box h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      margin: 0 0 0.35rem;
+    }
+
+    .section-title-box p {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    /* ── Upgrade Grid & Cards ── */
+    .upgrade-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.75rem;
+      margin-bottom: 3.5rem;
+    }
+
+    .upgrade-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 2.25rem 2rem;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .upgrade-card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-2px);
+    }
+
+    .upgrade-card.featured {
+      border-color: #44444c;
+      background: #111116;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.12);
+    }
+
+    .card-badge {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      background: var(--text-primary);
+      color: var(--accent-black);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 0.25rem 0.65rem;
+      border-radius: 4px;
+      letter-spacing: 0.06em;
+    }
+
+    .card-badge.subtle {
+      background: var(--bg-subsurface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-strong);
+    }
+
+    .card-tier-name {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin: 0 0 0.35rem;
+    }
+
+    .card-tier-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin: 0 0 1.25rem;
+      line-height: 1.4;
+      min-height: 2.8rem;
+    }
+
+    .card-price-row {
+      display: flex;
+      align-items: baseline;
+      gap: 0.25rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .card-currency {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .card-amount {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+
+    .card-period {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .feature-subhead {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin-bottom: 0.85rem;
+    }
+
+    .features-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 2rem;
+      flex-grow: 1;
+    }
+
+    .features-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      font-size: 0.875rem;
+      color: var(--text-primary);
+      margin-bottom: 0.85rem;
+      line-height: 1.45;
+    }
+
+    .check-svg {
+      flex-shrink: 0;
+      color: var(--text-primary);
+      margin-top: 2px;
+    }
+
+    .btn-action-primary {
+      width: 100%;
+      background: var(--text-primary);
+      color: var(--accent-black);
+      border: 1px solid var(--text-primary);
+      border-radius: 10px;
+      padding: 0.9rem 1.5rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+      text-decoration: none;
+      display: block;
+      box-sizing: border-box;
+    }
+
+    .btn-action-primary:hover {
+      background: #e4e4e7;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(255, 255, 255, 0.15);
+    }
+
+    .btn-action-secondary {
+      width: 100%;
+      background: var(--bg-subsurface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 0.9rem 1.5rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+      text-decoration: none;
+      display: block;
+      box-sizing: border-box;
+    }
+
+    .btn-action-secondary:hover {
+      background: var(--bg-hover);
+      border-color: #52525b;
+      transform: translateY(-1px);
+    }
+
+    /* ── Pro Active Capabilities Grid ── */
+    .pro-capabilities-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .pro-capability-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .pro-capability-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .pro-capability-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: var(--bg-subsurface);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-primary);
+      flex-shrink: 0;
+    }
+
+    .pro-capability-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .pro-capability-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    /* ── Customer Portal Management Card ── */
+    .portal-manage-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+
+    .portal-info h3 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0 0 0.35rem;
+    }
+
+    .portal-info p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin: 0;
+      max-width: 620px;
+    }
+
+    .portal-btn-wrapper {
+      flex-shrink: 0;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* ── Comparison Table ── */
+    .unlock-comparison-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 2.25rem 2rem;
+      margin-bottom: 3.5rem;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin-top: 1.5rem;
+    }
+
+    .billing-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .billing-table th {
+      padding: 1rem;
+      background: var(--bg-subsurface);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      border-bottom: 1px solid var(--border-subtle);
+      white-space: nowrap;
+    }
+
+    .billing-table td {
+      padding: 0.95rem 1rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      border-bottom: 1px solid #1c1c20;
+    }
+
+    .billing-table tr:hover td {
+      background: #121216;
+      color: var(--text-primary);
+    }
+
+    .billing-table td.feature-name {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .billing-table td.highlight-cell {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    /* ── Enterprise Trust Bar ── */
+    .enterprise-trust-bar {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 2.5rem;
+      margin-top: 2.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.75rem;
+    }
+
+    .trust-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .trust-icon-box {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-primary);
+      flex-shrink: 0;
+    }
+
+    .trust-item-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0 0 0.25rem;
+    }
+
+    .trust-item-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* ── Alerts & Status Feedback ── */
+    #billing-notification {
+      display: none;
+      padding: 1rem 1.25rem;
+      border-radius: 10px;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    #billing-notification.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    #billing-notification.success {
+      display: block;
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    @media (max-width: 768px) {
+      .billing-top-bar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .portal-manage-card {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .roi-callout-card {
+        grid-template-columns: 1fr;
+      }
+      .btn-action-primary, .btn-action-secondary {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body class="billing-body">
+  <main class="billing-container">
+
+    <!-- Top Navigation -->
+    <header class="billing-top-bar">
+      <a class="nav-back-link" href="/dashboard">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>Back to CloudGPT</span>
+      </a>
+
+      {% if user %}
+      <div class="user-account-badge">
+        <span>Workspace:</span>
+        <strong>{{ user.get('email', 'User') }}</strong>
+      </div>
+      {% endif %}
+    </header>
+
+    <!-- Notification / Flash box -->
+    <div id="billing-notification" role="alert"></div>
+
+    {% set active_plan = current_tier|lower %}
+
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- DEDICATED LITE USER BILLING DASHBOARD                                   -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    {% if active_plan == 'lite' or active_plan == 'free' %}
+
+    <!-- Page Header for Lite Tier -->
+    <div class="billing-header">
+      <p class="billing-eyebrow">WORKSPACE & BILLING · LITE TIER</p>
+      <h1 class="billing-title">CloudGPT Lite Workspace</h1>
+      <p class="billing-subtitle">Free-tier multi-cloud intelligence for AWS, GCP, and Azure architectural research.</p>
+    </div>
+
+    <!-- Current Plan: Lite Summary Card -->
+    <section class="current-plan-card" aria-labelledby="current-plan-heading">
+      <div class="plan-card-top">
+        <div>
+          <div class="plan-badge-wrapper">
+            <h2 id="current-plan-heading" class="plan-tag">Lite Plan</h2>
+            <span class="status-pill">
+              <span class="status-dot"></span>
+              <span>Active Free Tier</span>
+            </span>
+          </div>
+          <p style="color: var(--text-secondary); margin: 0.5rem 0 0; font-size: 0.9rem;">
+            Standard multi-cloud research tier with hybrid RAG across 848 AWS, GCP, and Azure services.
+          </p>
+        </div>
+        <div style="text-align: right;">
+          <div class="plan-price-detail">₹0</div>
+          <div class="plan-price-period">Free forever</div>
+        </div>
+      </div>
+
+      <!-- Token Quotas for Lite -->
+      <div class="quota-grid">
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">5-Hour Quota</span>
+            <svg class="quota-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_5h', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ 50,000 tokens</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: {% if usage and usage.get('tokens_used_5h', 0) %}{{ [((usage.get('tokens_used_5h', 0) / 50000) * 100)|round, 100]|min }}%{% else %}8%{% endif %};"></div>
+          </div>
+        </div>
+
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">Weekly Quota</span>
+            <svg class="quota-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_week', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ 300,000 tokens</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: {% if usage and usage.get('tokens_used_week', 0) %}{{ [((usage.get('tokens_used_week', 0) / 300000) * 100)|round, 100]|min }}%{% else %}12%{% endif %};"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-access-info">
+        <div class="model-access-label">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+          <span>Active Intelligence Engine:</span>
+        </div>
+        <span class="model-access-pill">Lite Model · Thinking: Low–High</span>
+      </div>
+    </section>
+
+    <!-- Multi-Cloud ROI & Overspend Avoidance Callout -->
+    <section class="roi-callout-card">
+      <div class="roi-content">
+        <h3>Enterprise Multi-Cloud Intelligence ROI</h3>
+        <p>A single production query on Pro or Max prevents thousands in hidden AWS egress traps, oversized Azure compute SKUs, and redundant GCP Cloud NAT gateways. Upgrading pays for itself on day one.</p>
+        <div class="roi-features-strip">
+          <div class="roi-feature-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Automated Cross-Cloud SKU Parity</span>
+          </div>
+          <div class="roi-feature-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Architecture Misconfiguration Audits</span>
+          </div>
+          <div class="roi-feature-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Persistent Architectural Session Memory</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <a href="#upgrade-tiers" class="btn-action-primary" style="white-space: nowrap; padding: 0.75rem 1.25rem;">View Upgrade Options</a>
+      </div>
+    </section>
+
+    <!-- Upgrade Plans for Lite Users -->
+    <div id="upgrade-tiers" class="section-title-box">
+      <h2>Upgrade to Production Intelligence</h2>
+      <p>Select the enterprise tier suited for your engineering throughput and architectural complexity.</p>
+    </div>
+
+    <div class="upgrade-grid">
+      <!-- Pro Upgrade Card -->
+      <article class="upgrade-card featured">
+        <span class="card-badge">Most Popular</span>
+        <div>
+          <h3 class="card-tier-name">Pro Tier</h3>
+          <p class="card-tier-desc">The standard for Senior Cloud Architects, DevOps Leads, and SREs shipping production workloads.</p>
+          <div class="card-price-row">
+            <span class="card-currency">₹</span>
+            <span class="card-amount">2,999</span>
+            <span class="card-period">/ month</span>
+          </div>
+          <p class="feature-subhead">Includes everything in Lite, plus:</p>
+          <ul class="features-list">
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>250,000 tokens / 5h</strong> (5x Lite quota) · <strong>2,000,000 tokens / week</strong></span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Core Model</strong> with <strong>Low–High Thinking Depth</strong></span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Agentic RAG Engine</strong>: Multi-cloud query routing with iterative self-critique</span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Cross-Cloud Parity Analysis</strong>: Instant AWS ↔ GCP ↔ Azure equivalence</span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Persistent Session Memory</strong> across architectural discussions</span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>5 Architecture Uploads/chat</strong> + <strong>50,000 chars/day Voice Briefings</strong></span>
+            </li>
+          </ul>
+        </div>
+        <button class="btn-action-primary btn-checkout" data-plan="pro">Upgrade to Pro — ₹2,999/mo</button>
+      </article>
+
+      <!-- Max Upgrade Card -->
+      <article class="upgrade-card">
+        <span class="card-badge subtle">Apex Enterprise</span>
+        <div>
+          <h3 class="card-tier-name">Max Tier</h3>
+          <p class="card-tier-desc">Mission-critical multi-cloud intelligence with autonomous deep reasoning and migration blueprints.</p>
+          <div class="card-price-row">
+            <span class="card-currency">₹</span>
+            <span class="card-amount">7,999</span>
+            <span class="card-period">/ month</span>
+          </div>
+          <p class="feature-subhead">Enterprise cloud engineering power:</p>
+          <ul class="features-list">
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>500,000 tokens / 5h</strong> (10x quota) · <strong>15,000,000 tokens / week</strong></span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Apex Model</strong> with <strong>Low–Max Deep Reasoning (~65k budget)</strong></span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Adaptive Advanced RAG</strong>: Autonomous multi-hop synthesis across 848 services</span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Automated Multi-Cloud Migration Blueprints</strong> & Terraform synthesis</span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>10 Uploads/chat</strong> + <strong>200,000 chars/day Voice Briefings</strong></span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Dedicated Compute SLA</strong> & Priority Infrastructure Queue</span>
+            </li>
+          </ul>
+        </div>
+        <button class="btn-action-secondary btn-checkout" data-plan="max">Upgrade to Max — ₹7,999/mo</button>
+      </article>
+    </div>
+
+    <!-- Feature Unlock Matrix for Lite -->
+    <section class="unlock-comparison-box">
+      <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin: 0 0 0.5rem;">Multi-Cloud Capability Matrix</h3>
+      <p style="color: var(--text-secondary); font-size: 0.9rem; margin: 0 0 1.5rem;">Detailed breakdown of capabilities and quotas across CloudGPT tiers.</p>
+
+      <div class="table-container">
+        <table class="billing-table">
+          <thead>
+            <tr>
+              <th>Architecture Capability</th>
+              <th>Lite (Current)</th>
+              <th>Pro Tier</th>
+              <th>Max Tier</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="feature-name">Monthly Investment</td>
+              <td>₹0</td>
+              <td class="highlight-cell">₹2,999</td>
+              <td class="highlight-cell">₹7,999</td>
+            </tr>
+            <tr>
+              <td class="feature-name">5-Hour Rolling Limit</td>
+              <td>50,000 tokens</td>
+              <td class="highlight-cell">250,000 tokens</td>
+              <td class="highlight-cell">500,000 tokens</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Weekly Rolling Limit</td>
+              <td>300,000 tokens</td>
+              <td class="highlight-cell">2,000,000 tokens</td>
+              <td class="highlight-cell">15,000,000 tokens</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Monthly Token Ceiling</td>
+              <td>1,200,000 tokens</td>
+              <td class="highlight-cell">10,000,000 tokens</td>
+              <td class="highlight-cell">60,000,000 tokens</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Intelligence Engine</td>
+              <td>Lite Model</td>
+              <td class="highlight-cell">Core Model</td>
+              <td class="highlight-cell">Apex Model</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Thinking Reasoning Depth</td>
+              <td>Low–High</td>
+              <td class="highlight-cell">Low–High</td>
+              <td class="highlight-cell">Low–Max (~65k budget)</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Retrieval Pipeline</td>
+              <td>Hybrid Dense + BM25</td>
+              <td class="highlight-cell">Agentic RAG (Plan & Route)</td>
+              <td class="highlight-cell">Adaptive Advanced RAG</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Cross-Cloud Parity Analysis</td>
+              <td>Basic documentation</td>
+              <td class="highlight-cell">Real-time SKU & Cost Parity</td>
+              <td class="highlight-cell">Full Migration Orchestration</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Architectural Memory</td>
+              <td>Ephemeral (Per-Session)</td>
+              <td class="highlight-cell">Persistent Multi-Session Memory</td>
+              <td class="highlight-cell">Deep Cross-Project Memory</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Multimodal Diagram Ingestion</td>
+              <td>2 files / chat</td>
+              <td class="highlight-cell">5 files / chat</td>
+              <td class="highlight-cell">10 files / chat</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Daily Audio Briefings</td>
+              <td>5,000 chars / day</td>
+              <td class="highlight-cell">50,000 chars / day</td>
+              <td class="highlight-cell">200,000 chars / day</td>
+            </tr>
+            <tr>
+              <td class="feature-name">Production SLA</td>
+              <td>Community</td>
+              <td class="highlight-cell">Standard Business Priority</td>
+              <td class="highlight-cell">Dedicated Enterprise Compute SLA</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- DEDICATED PRO USER BILLING DASHBOARD                                    -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    {% elif active_plan == 'pro' %}
+
+    <!-- Page Header for Pro Tier -->
+    <div class="billing-header">
+      <p class="billing-eyebrow">WORKSPACE & BILLING · PRO MEMBERSHIP</p>
+      <h1 class="billing-title">CloudGPT Pro Workspace</h1>
+      <p class="billing-subtitle">Active production multi-cloud reasoning engine with high-throughput token quotas and agentic RAG.</p>
+    </div>
+
+    <!-- Current Plan: Pro Summary Card -->
+    <section class="current-plan-card" aria-labelledby="current-plan-heading">
+      <div class="plan-card-top">
+        <div>
+          <div class="plan-badge-wrapper">
+            <h2 id="current-plan-heading" class="plan-tag">Pro Plan</h2>
+            <span class="status-pill active-pro">
+              <span class="status-dot green-pulse"></span>
+              <span>Active Subscription</span>
+            </span>
+          </div>
+          <p style="color: var(--text-secondary); margin: 0.5rem 0 0; font-size: 0.9rem;">
+            Enterprise multi-cloud reasoning engine active for production AWS, GCP, and Azure infrastructure workloads.
+          </p>
+        </div>
+        <div style="text-align: right;">
+          <div class="plan-price-detail">₹2,999</div>
+          <div class="plan-price-period">per month • Auto-renews</div>
+        </div>
+      </div>
+
+      <!-- Token Quotas for Pro -->
+      <div class="quota-grid">
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">5-Hour Quota</span>
+            <svg class="quota-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_5h', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ 250,000 tokens</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: {% if usage and usage.get('tokens_used_5h', 0) %}{{ [((usage.get('tokens_used_5h', 0) / 250000) * 100)|round, 100]|min }}%{% else %}15%{% endif %};"></div>
+          </div>
+        </div>
+
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">Weekly Quota</span>
+            <svg class="quota-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_week', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ 2,000,000 tokens</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: {% if usage and usage.get('tokens_used_week', 0) %}{{ [((usage.get('tokens_used_week', 0) / 2000000) * 100)|round, 100]|min }}%{% else %}20%{% endif %};"></div>
+          </div>
+        </div>
+
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">Monthly Ceiling</span>
+            <svg class="quota-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_month', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ 10,000,000 tokens</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: {% if usage and usage.get('tokens_used_month', 0) %}{{ [((usage.get('tokens_used_month', 0) / 10000000) * 100)|round, 100]|min }}%{% else %}10%{% endif %};"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-access-info">
+        <div class="model-access-label">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+          <span>Active Intelligence Engine:</span>
+        </div>
+        <span class="model-access-pill">Core Model · Thinking: Low–High</span>
+      </div>
+    </section>
+
+    <!-- Pro Unlocked Capabilities Grid -->
+    <div class="section-title-box">
+      <h2>Active Pro Capabilities</h2>
+      <p>Your subscription unlocks enterprise multi-cloud tools and architectural intelligence.</p>
+    </div>
+
+    <div class="pro-capabilities-grid">
+      <div class="pro-capability-card">
+        <div class="pro-capability-header">
+          <div class="pro-capability-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="m4.93 4.93 4.24 4.24"></path><path d="m14.83 9.17 4.24-4.24"></path><path d="m14.83 14.83 4.24 4.24"></path><path d="m9.17 14.83-4.24 4.24"></path></svg>
+          </div>
+          <h3 class="pro-capability-title">Agentic RAG Engine</h3>
+        </div>
+        <p class="pro-capability-desc">Multi-cloud query routing with autonomous plan generation and iterative self-critique against official documentation.</p>
+      </div>
+
+      <div class="pro-capability-card">
+        <div class="pro-capability-header">
+          <div class="pro-capability-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1"></path><path d="M18 8h4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-4"></path><circle cx="8" cy="12" r="2"></circle></svg>
+          </div>
+          <h3 class="pro-capability-title">Cross-Cloud Parity Engine</h3>
+        </div>
+        <p class="pro-capability-desc">Direct architectural mapping across AWS, GCP, and Azure with real-time SKU pricing calculators and cost trade-offs.</p>
+      </div>
+
+      <div class="pro-capability-card">
+        <div class="pro-capability-header">
+          <div class="pro-capability-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+          </div>
+          <h3 class="pro-capability-title">Persistent Session Memory</h3>
+        </div>
+        <p class="pro-capability-desc">Context retention preserves your VPC design constraints, IAM policies, and infrastructure choices across conversations.</p>
+      </div>
+
+      <div class="pro-capability-card">
+        <div class="pro-capability-header">
+          <div class="pro-capability-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          </div>
+          <h3 class="pro-capability-title">High-Throughput Ingestion</h3>
+        </div>
+        <p class="pro-capability-desc">Upload up to 5 architecture diagrams & config files per chat, with 50,000 characters/day of high-fidelity voice briefings.</p>
+      </div>
+    </div>
+
+    <!-- Pro Management: Billing Portal -->
+    <section class="portal-manage-card">
+      <div class="portal-info">
+        <h3>Manage Subscription & Invoices</h3>
+        <p>View past billing cycles, download GST-compliant tax invoices, and update payment instruments. Subscription modifications and plan updates are managed self-serve.</p>
+      </div>
+      <div class="portal-btn-wrapper">
+        <button class="btn-action-secondary btn-portal">Manage Billing Portal</button>
+      </div>
+    </section>
+
+    <!-- Upgrade to Max Card for Pro Users -->
+    <div class="section-title-box">
+      <h2>Scale to Apex Enterprise</h2>
+      <p>Need 15M weekly tokens, autonomous multi-cloud migration blueprints, or dedicated compute SLA?</p>
+    </div>
+
+    <div class="upgrade-grid" style="grid-template-columns: 1fr; max-width: 720px;">
+      <article class="upgrade-card featured">
+        <span class="card-badge">Apex Tier Upgrade</span>
+        <div>
+          <h3 class="card-tier-name">Max Tier Upgrade</h3>
+          <p class="card-tier-desc">Unlock maximum throughput and deep autonomous reasoning for enterprise multi-cloud infrastructure teams.</p>
+          <div class="card-price-row">
+            <span class="card-currency">₹</span>
+            <span class="card-amount">7,999</span>
+            <span class="card-period">/ month</span>
+          </div>
+          <p class="feature-subhead">Scale your capabilities with Max:</p>
+          <ul class="features-list">
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>500,000 tokens / 5h</strong> (2x Pro quota) · <strong>15,000,000 tokens / week</strong> (7.5x Pro quota)</span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Apex Model</strong> with <strong>Low–Max Deep Reasoning (~65k budget)</strong></span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Adaptive Advanced RAG</strong>: Autonomous multi-hop synthesis across 848 services</span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Automated Multi-Cloud Migration Blueprints</strong> & Terraform synthesis</span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>10 Diagram Uploads/chat</strong> + <strong>200,000 chars/day Voice Briefings</strong></span>
+            </li>
+            <li>
+              <svg class="check-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span><strong>Dedicated Compute SLA</strong> & Priority Infrastructure Queue</span>
+            </li>
+          </ul>
+        </div>
+        <button class="btn-action-primary btn-checkout" data-plan="max">Upgrade to Max — ₹7,999/mo</button>
+      </article>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- DEDICATED MAX / APEX USER BILLING DASHBOARD                             -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    {% elif active_plan == 'max' %}
+
+    <!-- Page Header for Max Tier -->
+    <div class="billing-header">
+      <p class="billing-eyebrow">WORKSPACE & BILLING · APEX TIER</p>
+      <h1 class="billing-title">CloudGPT Max Enterprise</h1>
+      <p class="billing-subtitle">Autonomous multi-cloud reasoning engine with maximum token throughput and priority compute SLA.</p>
+    </div>
+
+    <section class="current-plan-card" aria-labelledby="current-plan-heading">
+      <div class="plan-card-top">
+        <div>
+          <div class="plan-badge-wrapper">
+            <h2 id="current-plan-heading" class="plan-tag">Max Plan</h2>
+            <span class="status-pill active-pro">
+              <span class="status-dot green-pulse"></span>
+              <span>Highest Active Tier</span>
+            </span>
+          </div>
+          <p style="color: var(--text-secondary); margin: 0.5rem 0 0; font-size: 0.9rem;">
+            You have full access to CloudGPT's highest token quotas, apex models, and autonomous multi-cloud execution tools.
+          </p>
+        </div>
+        <div style="text-align: right;">
+          <div class="plan-price-detail">₹7,999</div>
+          <div class="plan-price-period">per month • Auto-renews</div>
+        </div>
+      </div>
+
+      <div class="quota-grid">
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">5-Hour Quota</span>
+            <svg class="quota-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_5h', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ 500,000 tokens</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: {% if usage and usage.get('tokens_used_5h', 0) %}{{ [((usage.get('tokens_used_5h', 0) / 500000) * 100)|round, 100]|min }}%{% else %}8%{% endif %};"></div>
+          </div>
+        </div>
+
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">Weekly Quota</span>
+            <svg class="quota-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_week', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ 15,000,000 tokens</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: {% if usage and usage.get('tokens_used_week', 0) %}{{ [((usage.get('tokens_used_week', 0) / 15000000) * 100)|round, 100]|min }}%{% else %}5%{% endif %};"></div>
+          </div>
+        </div>
+
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">Monthly Ceiling</span>
+            <svg class="quota-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_month', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ 60,000,000 tokens</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: {% if usage and usage.get('tokens_used_month', 0) %}{{ [((usage.get('tokens_used_month', 0) / 60000000) * 100)|round, 100]|min }}%{% else %}5%{% endif %};"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-access-info">
+        <div class="model-access-label">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          <span>Active Intelligence Engine:</span>
+        </div>
+        <span class="model-access-pill">Apex Model · Thinking: Low–Max (~65k Budget)</span>
+      </div>
+    </section>
+
+    <section class="portal-manage-card">
+      <div class="portal-info">
+        <h3>Manage Subscription & Tax Invoices</h3>
+        <p>Download invoices, update enterprise billing contacts, or manage payment instruments via our secure portal.</p>
+      </div>
+      <div class="portal-btn-wrapper">
+        <button class="btn-action-secondary btn-portal">Manage Billing Portal</button>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- DEVELOPER / ADMIN USER VIEW                                             -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    {% elif active_plan in ['developer', 'admin'] %}
+
+    <div class="billing-header">
+      <p class="billing-eyebrow">WORKSPACE & BILLING · DEVELOPER TIER</p>
+      <h1 class="billing-title">Developer Environment</h1>
+      <p class="billing-subtitle">Full internal developer account with unlimited token quotas and unrestricted access to all models and cloud tools.</p>
+    </div>
+
+    <section class="current-plan-card">
+      <div class="plan-card-top">
+        <div>
+          <div class="plan-badge-wrapper">
+            <h2 class="plan-tag">Developer Tier</h2>
+            <span class="status-pill active-pro">
+              <span class="status-dot green-pulse"></span>
+              <span>Internal Full Access</span>
+            </span>
+          </div>
+          <p style="color: var(--text-secondary); margin: 0.5rem 0 0; font-size: 0.9rem;">
+            Internal developer account with zero quota enforcement and full system tool bypass.
+          </p>
+        </div>
+        <div style="text-align: right;">
+          <div class="plan-price-detail">Unlimited</div>
+          <div class="plan-price-period">Internal Tier</div>
+        </div>
+      </div>
+
+      <div class="quota-grid">
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">5-Hour Quota</span>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_5h', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ Unlimited</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="quota-box">
+          <div class="quota-header">
+            <span class="quota-label">Weekly Quota</span>
+          </div>
+          <div class="quota-numbers">
+            <span class="quota-used">{% if usage %}{{ "{:,}".format(usage.get('tokens_used_week', 0)) }}{% else %}0{% endif %}</span>
+            <span class="quota-limit">/ Unlimited</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-access-info">
+        <div class="model-access-label">
+          <span>Active Intelligence Engine:</span>
+        </div>
+        <span class="model-access-pill">Full Apex Access (Apex, Core, Lite & Cloud API Tools)</span>
+      </div>
+    </section>
+
+    {% endif %}
+
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- ENTERPRISE TRUST & SECURITY BAR (COMMON TO ALL VIEWS)                  -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <section class="enterprise-trust-bar">
+      <div class="trust-item">
+        <div class="trust-icon-box">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <div>
+          <h4 class="trust-item-title">Bank-Grade Security</h4>
+          <p class="trust-item-desc">256-bit encryption via PCI-DSS compliant gateways. Card data never touches CloudGPT servers.</p>
+        </div>
+      </div>
+
+      <div class="trust-item">
+        <div class="trust-icon-box">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+        </div>
+        <div>
+          <h4 class="trust-item-title">Zero Prompt Training</h4>
+          <p class="trust-item-desc">Your multi-cloud architecture diagrams, Terraform code, and prompt inputs are never used to train models.</p>
+        </div>
+      </div>
+
+      <div class="trust-item">
+        <div class="trust-icon-box">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 14 14"></polyline>
+          </svg>
+        </div>
+        <div>
+          <h4 class="trust-item-title">Cancel Anytime</h4>
+          <p class="trust-item-desc">1-click self-serve cancellation. Retain plan access until the conclusion of your current billing cycle.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/js/razorpay-client.js"></script>
+  <script src="/static/js/billing.js"></script>
+</body>
+</html>

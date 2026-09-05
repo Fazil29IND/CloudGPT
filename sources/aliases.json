@@ -1,0 +1,19 @@
+{
+  "Azure Active Directory": "Microsoft Entra ID",
+  "Vertex AI": "Gemini Enterprise Agent Platform (GEAP)",
+  "Azure AD B2C": "Microsoft Entra External ID",
+  "AWS CodeCommit": "(deprecated, recommend CodeCatalyst)",
+  "Cloud IoT Core": "(retired)",
+  "Azure Media Services": "(retired)",
+  "Google Cloud Datalab": "(retired, recommend Colab Enterprise)",
+  "Amazon Q Developer": "Amazon Kiro (sunset EOL April 2027)",
+  "Amazon Kendra": "Amazon Bedrock Knowledge Bases (Kendra in maintenance mode)",
+  "Azure AI Foundry": "Microsoft Foundry",
+  "Agent Engine": "Deployments (formerly Agent Engine)",
+  "Vertex AI Search": "Search (formerly Vertex AI Search)",
+  "AWS App Mesh": "Cloud Service Mesh (App Mesh deprecated)",
+  "Azure Synapse Analytics": "Microsoft Fabric Warehouse (Synapse in maintenance mode)",
+  "Cloud Domains": "(retired, external registrar integration)",
+  "AWS Cloud9": "Cloud9 (maintenance mode for existing users)",
+  "Dataplex": "Knowledge Catalog (Dataplex)"
+}

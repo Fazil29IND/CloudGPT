@@ -1,0 +1,219 @@
+# ============================================================================
+# CloudGPT — Production Docker Compose Stack
+# ============================================================================
+# Services:
+#   app        FastAPI application (uvicorn, not exposed directly)
+#   worker     ARQ background jobs (email delivery, cleanup, RAG re-ingestion)
+#   postgres   PostgreSQL 16 (datastore)
+#   redis      Redis 7 (cache, rate limiting, session memory, task queue)
+#   caddy      TLS-terminating reverse proxy (only externally exposed port)
+#   prometheus Metrics scraper
+#   grafana    Dashboards (logs + metrics)
+#   loki       Log aggregation backend
+#   promtail   Docker container log shipper
+#
+# Required env (see .env.compose.example):
+#   Compose reads .env automatically for ${VAR} interpolation (or use .env.compose
+#   via `docker compose --env-file .env.compose`).
+#   SECRET_KEY and POSTGRES_PASSWORD MUST be set — no insecure defaults exist.
+# ============================================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cloudgpt_app
+    restart: unless-stopped
+    # No ports exposed to the host: all external traffic terminates at Caddy.
+    expose:
+      - "5001"
+    environment:
+      ENVIRONMENT: "production"
+      REDIS_ENABLED: "true"
+      SEED_DEMO_ACCOUNTS: "false"
+      LOG_FORMAT: "json"
+      METRICS_ENABLED: "true"
+      # Fail fast unless secrets are explicitly provided — never ship defaults.
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required - see .env.compose.example}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required - see .env.compose.example}"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-cloudgpt}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cloudgpt_db}"
+      REDIS_URL: "redis://redis:6379/0"
+      CORS_ORIGINS: "${CORS_ORIGINS:-https://${DOMAIN:-localhost}}"
+      TRUSTED_HOSTS: "${TRUSTED_HOSTS:-${DOMAIN:-localhost},cloudgpt_app}"
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL:-}"
+      DEVELOPER_EMAILS: "${DEVELOPER_EMAILS:-}"
+      BILLING_ENABLED: "${BILLING_ENABLED:-false}"
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+      STRIPE_PUBLISHABLE_KEY: "${STRIPE_PUBLISHABLE_KEY:-}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+      STRIPE_PRICE_LITE_MONTHLY: "${STRIPE_PRICE_LITE_MONTHLY:-}"
+      STRIPE_PRICE_LITE_YEARLY: "${STRIPE_PRICE_LITE_YEARLY:-}"
+      STRIPE_PRICE_PRO_MONTHLY: "${STRIPE_PRICE_PRO_MONTHLY:-}"
+      STRIPE_PRICE_PRO_YEARLY: "${STRIPE_PRICE_PRO_YEARLY:-}"
+      STRIPE_PRICE_MAX_MONTHLY: "${STRIPE_PRICE_MAX_MONTHLY:-}"
+      STRIPE_PRICE_MAX_YEARLY: "${STRIPE_PRICE_MAX_YEARLY:-}"
+      KIMI_API_KEY: "${KIMI_API_KEY:-}"
+      GLM_API_KEY: "${GLM_API_KEY:-}"
+      QWEN_API_KEY: "${QWEN_API_KEY:-}"
+      GPT_OSS_API_KEY: "${GPT_OSS_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      SEARXNG_URL: "${SEARXNG_URL:-}"
+      TAVILY_API_KEY: "${TAVILY_API_KEY:-}"
+      PINECONE_API_KEY: "${PINECONE_API_KEY:-}"
+      EMAIL_ENABLED: "${EMAIL_ENABLED:-false}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM_EMAIL: "${SMTP_FROM_EMAIL:-noreply@cloudgpt.local}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5001/healthz', timeout=3)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cloudgpt_worker
+    restart: unless-stopped
+    command: ["python", "worker.py"]
+    environment:
+      ENVIRONMENT: "production"
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required - see .env.compose.example}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required - see .env.compose.example}"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-cloudgpt}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cloudgpt_db}"
+      REDIS_URL: "redis://redis:6379/0"
+      EMAIL_ENABLED: "${EMAIL_ENABLED:-false}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM_EMAIL: "${SMTP_FROM_EMAIL:-noreply@cloudgpt.local}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: cloudgpt_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-cloudgpt}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required - see .env.compose.example}"
+      POSTGRES_DB: "${POSTGRES_DB:-cloudgpt_db}"
+    # Not exposed to the host; uncomment for local debugging only.
+    # ports:
+    #   - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cloudgpt} -d ${POSTGRES_DB:-cloudgpt_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    container_name: cloudgpt_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    # Not exposed to the host; only reachable on the internal network.
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: cloudgpt_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: "${DOMAIN:-localhost}"
+      APP_UPSTREAM: "cloudgpt_app:5001"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: cloudgpt_prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    # Scraping stays on the internal network; expose only for debugging.
+    # ports:
+    #   - "9090:9090"
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: cloudgpt_loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: cloudgpt_promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_positions:/positions
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: cloudgpt_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required - see .env.compose.example}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "https://${DOMAIN:-localhost}/grafana"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - loki
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:
+  prometheus_data:
+  loki_data:
+  promtail_positions:
+  grafana_data:

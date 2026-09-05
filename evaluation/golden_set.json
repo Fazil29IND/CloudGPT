@@ -1,0 +1,2371 @@
+[
+  {
+    "question": "What is the AWS S3 default encryption algorithm for new objects?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "AES-256",
+      "SSE-S3",
+      "server-side encryption",
+      "Amazon S3"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which CLI command lists all S3 buckets in an AWS account?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "aws s3 ls",
+      "s3api list-buckets",
+      "buckets"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the maximum single PUT object size in Amazon S3?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "5 GB",
+      "5 gigabytes",
+      "multipart upload",
+      "5 TB"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the default port and protocol for Azure Bastion connectivity?",
+    "provider": "azure",
+    "service": "azure-bastion",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "443",
+      "HTTPS",
+      "TLS",
+      "Bastion",
+      "RDP",
+      "SSH"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What gcloud command creates a Google Kubernetes Engine cluster?",
+    "provider": "gcp",
+    "service": "gke",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "gcloud container clusters create",
+      "gke",
+      "cluster"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the maximum execution duration for an AWS Lambda function?",
+    "provider": "aws",
+    "service": "lambda",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "15 minutes",
+      "900 seconds",
+      "timeout",
+      "lambda"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain how Amazon DynamoDB handles global replication using Global Tables.",
+    "provider": "aws",
+    "service": "dynamodb",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Global Tables",
+      "DynamoDB Streams",
+      "multi-region",
+      "active-active"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Cloud VPC Service Controls enforce zero-trust security perimeters?",
+    "provider": "gcp",
+    "service": "vpc",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "VPC Service Controls",
+      "security perimeter",
+      "data exfiltration",
+      "access levels"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain the architecture of Azure Key Vault and hardware security module backing.",
+    "provider": "azure",
+    "service": "key-vault",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Key Vault",
+      "HSM",
+      "FIPS 140",
+      "managed keys",
+      "secrets"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the difference between AWS EFS and Amazon EBS storage architectures?",
+    "provider": "aws",
+    "service": "ebs",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "NFS",
+      "file storage",
+      "block storage",
+      "multi-attach",
+      "IOPS"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does BigQuery execute serverless distributed SQL queries?",
+    "provider": "gcp",
+    "service": "bigquery",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Dremel",
+      "Colossus",
+      "slots",
+      "columnar",
+      "storage and compute separation"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Azure Cosmos DB consistency levels from strong to eventual.",
+    "provider": "azure",
+    "service": "cosmos-db",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Strong",
+      "Bounded Staleness",
+      "Session",
+      "Consistent Prefix",
+      "Eventual"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare AWS Lambda vs Google Cloud Functions vs Azure Functions for serverless compute.",
+    "provider": "multi-cloud",
+    "service": "serverless",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "Lambda",
+      "Cloud Functions",
+      "Azure Functions",
+      "cold starts",
+      "event triggers"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare AWS S3 vs Azure Blob Storage vs Google Cloud Storage pricing tiers and classes.",
+    "provider": "multi-cloud",
+    "service": "storage",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "Standard",
+      "Infrequent Access",
+      "Archive",
+      "Glacier",
+      "Coldline",
+      "Cool"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare Amazon EKS vs Azure AKS vs Google GKE for enterprise Kubernetes management.",
+    "provider": "multi-cloud",
+    "service": "kubernetes",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "EKS",
+      "AKS",
+      "GKE",
+      "control plane",
+      "Autopilot",
+      "Fargate"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare AWS Aurora vs Azure SQL Hyperscale vs Google Cloud Spanner for distributed relational data.",
+    "provider": "multi-cloud",
+    "service": "database",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "Aurora",
+      "Hyperscale",
+      "Spanner",
+      "TrueTime",
+      "replication"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare AWS IAM vs Microsoft Entra ID vs Google Cloud IAM role hierarchy.",
+    "provider": "multi-cloud",
+    "service": "iam",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "IAM",
+      "Entra ID",
+      "RBAC",
+      "permissions",
+      "service principal"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare AWS CloudFormation vs Azure Bicep vs Google Cloud Deployment Manager for native IaC.",
+    "provider": "multi-cloud",
+    "service": "iac",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "CloudFormation",
+      "Bicep",
+      "Terraform",
+      "declarative",
+      "ARM"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I troubleshoot Kubernetes Pod CrashLoopBackOff in an EKS cluster?",
+    "provider": "aws",
+    "service": "eks",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "CrashLoopBackOff",
+      "kubectl logs",
+      "kubectl describe pod",
+      "exit code",
+      "OOMKilled"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How to resolve AWS S3 403 Forbidden AccessDenied when downloading an object?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "AccessDenied",
+      "bucket policy",
+      "IAM permissions",
+      "KMS decrypt",
+      "Block Public Access"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I fix Azure VM connection timeout error on SSH port 22?",
+    "provider": "azure",
+    "service": "azure-vm",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "NSG",
+      "Network Security Group",
+      "inbound rule",
+      "port 22",
+      "public IP"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Troubleshoot Google Cloud Run 504 Gateway Timeout error on heavy workloads.",
+    "provider": "gcp",
+    "service": "cloud-run",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "504",
+      "request timeout",
+      "concurrency",
+      "CPU allocation",
+      "container"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How to fix Redis memory allocation failure OOM error on high write traffic?",
+    "provider": "multi-cloud",
+    "service": "redis",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "maxmemory",
+      "maxmemory-policy",
+      "eviction",
+      "allkeys-lru",
+      "OOM"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I troubleshoot AWS RDS MySQL Too many connections error 1040?",
+    "provider": "aws",
+    "service": "rds",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "max_connections",
+      "RDS Proxy",
+      "connection pooling",
+      "parameter group"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Provide a Terraform template to provision an AWS S3 bucket with server-side encryption and versioning.",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "iac",
+    "expected_keywords": [
+      "aws_s3_bucket",
+      "aws_s3_bucket_server_side_encryption_configuration",
+      "aws_s3_bucket_versioning",
+      "terraform"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Write a Terraform module for a multi-region Google Cloud Storage bucket with CMEK encryption.",
+    "provider": "gcp",
+    "service": "cloud-storage",
+    "query_type": "iac",
+    "expected_keywords": [
+      "google_storage_bucket",
+      "encryption",
+      "default_kms_key_name",
+      "location"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Provide a Bicep template to deploy an Azure Key Vault with RBAC authorization enabled.",
+    "provider": "azure",
+    "service": "key-vault",
+    "query_type": "iac",
+    "expected_keywords": [
+      "Microsoft.KeyVault/vaults",
+      "enableRbacAuthorization",
+      "sku",
+      "bicep"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Write a Terraform configuration for an AWS EKS managed node group with t3.medium instances.",
+    "provider": "aws",
+    "service": "eks",
+    "query_type": "iac",
+    "expected_keywords": [
+      "aws_eks_node_group",
+      "instance_types",
+      "scaling_config",
+      "desired_size"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Provide a CloudFormation YAML template to create a secure Amazon VPC with public and private subnets.",
+    "provider": "aws",
+    "service": "vpc",
+    "query_type": "iac",
+    "expected_keywords": [
+      "AWS::EC2::VPC",
+      "AWS::EC2::Subnet",
+      "InternetGateway",
+      "NatGateway",
+      "RouteTable"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Write a Helm values.yaml snippet for configuring Kubernetes ingress with TLS termination.",
+    "provider": "multi-cloud",
+    "service": "kubernetes",
+    "query_type": "iac",
+    "expected_keywords": [
+      "ingress",
+      "tls",
+      "hosts",
+      "secretName",
+      "annotations",
+      "cert-manager"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How should we structure our Terraform modules for our AWS multi-region infrastructure?",
+    "provider": "aws",
+    "service": "terraform",
+    "query_type": "context_memory",
+    "expected_keywords": [
+      "terraform",
+      "modules",
+      "us-east-1",
+      "backend",
+      "remote_state"
+    ],
+    "requires_web": false,
+    "user_memories": [
+      {
+        "memory_key": "primary_cloud",
+        "memory_value": "AWS (Amazon Web Services)"
+      },
+      {
+        "memory_key": "iac_tool",
+        "memory_value": "Terraform"
+      },
+      {
+        "memory_key": "primary_region",
+        "memory_value": "us-east-1"
+      }
+    ]
+  },
+  {
+    "question": "What is the monthly cost comparison between AWS Lambda and Google Cloud Run for 50 million monthly requests with 512MB RAM?",
+    "provider": "multi-cloud",
+    "service": "pricing",
+    "query_type": "context_pricing",
+    "expected_keywords": [
+      "Lambda",
+      "Cloud Run",
+      "GB-seconds",
+      "million requests",
+      "free tier"
+    ],
+    "requires_web": true
+  },
+  {
+    "question": "Can you analyze our attached cloud architecture diagram and verify security best practices?",
+    "provider": "aws",
+    "service": "architecture",
+    "query_type": "context_attachment",
+    "expected_keywords": [
+      "VPC",
+      "bastion",
+      "private subnet",
+      "security group",
+      "least privilege"
+    ],
+    "requires_web": false,
+    "attachment_texts": [
+      {
+        "filename": "architecture-spec.txt",
+        "content_type": "text/plain",
+        "content": "Architecture Specification: Public ALB in us-east-1 -> Private ECS Fargate tasks -> RDS PostgreSQL Multi-AZ in isolated DB subnets with KMS encryption."
+      }
+    ]
+  },
+  {
+    "question": "What is the maximum message size supported by Amazon SQS standard queues?",
+    "provider": "aws",
+    "service": "sqs",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "256 KB",
+      "kilobytes",
+      "Extended Client",
+      "S3"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS IAM evaluate resource-based policies versus identity-based policies?",
+    "provider": "aws",
+    "service": "iam",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "explicit deny",
+      "allow",
+      "permissions boundary",
+      "principal",
+      "evaluation logic"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the CIDR block size limit for an Amazon VPC?",
+    "provider": "aws",
+    "service": "vpc",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "/16",
+      "/28",
+      "IPv4",
+      "subnet",
+      "CIDR"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Amazon Aurora Multi-AZ cluster architecture and storage quorum replication.",
+    "provider": "aws",
+    "service": "rds",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Aurora",
+      "quorum",
+      "6 copies",
+      "3 Availability Zones",
+      "storage node"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which CLI command describes the status of an Amazon EKS cluster?",
+    "provider": "aws",
+    "service": "eks",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "aws eks describe-cluster",
+      "--name",
+      "status",
+      "endpoint"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Amazon ECS Fargate manage underlying container task networking with awsvpc mode?",
+    "provider": "aws",
+    "service": "ecs",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "awsvpc",
+      "ENI",
+      "elastic network interface",
+      "security group",
+      "private IP"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What are the retention period limits for Amazon CloudWatch Logs log groups?",
+    "provider": "aws",
+    "service": "cloudwatch",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "1 day",
+      "10 years",
+      "Never expire",
+      "retention policy"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS Secrets Manager perform automatic credential rotation for RDS databases?",
+    "provider": "aws",
+    "service": "secrets-manager",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Lambda function",
+      "rotation strategy",
+      "AWSPENDING",
+      "AWSCURRENT",
+      "two-user"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the maximum execution time for AWS Step Functions standard workflows?",
+    "provider": "aws",
+    "service": "step-functions",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "1 year",
+      "Standard workflows",
+      "Express workflows",
+      "5 minutes"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain the difference between Amazon Route 53 latency-based routing and geoproximity routing.",
+    "provider": "aws",
+    "service": "route53",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "latency",
+      "geoproximity",
+      "bias",
+      "AWS region",
+      "traffic flow"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the default retention period for messages in Amazon Kinesis Data Streams?",
+    "provider": "aws",
+    "service": "kinesis",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "24 hours",
+      "365 days",
+      "shards",
+      "retention"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS Transit Gateway simplify hub-and-spoke VPC connectivity across multiple accounts?",
+    "provider": "aws",
+    "service": "vpc",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Transit Gateway",
+      "attachment",
+      "route table",
+      "peering",
+      "hub and spoke"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What CLI command creates an Amazon SNS topic?",
+    "provider": "aws",
+    "service": "sns",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "aws sns create-topic",
+      "--name",
+      "TopicArn"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain AWS WAF Web ACL rules, rate limiting, and managed rule sets.",
+    "provider": "aws",
+    "service": "waf",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Web ACL",
+      "rate-based rule",
+      "AWSManagedRules",
+      "ALB",
+      "CloudFront"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the difference between Amazon EventBridge event bus and Amazon SNS?",
+    "provider": "aws",
+    "service": "eventbridge",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "content-based filtering",
+      "schema registry",
+      "SaaS integrations",
+      "pub/sub"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What AWS CLI command generates a pre-signed URL for an Amazon S3 object?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "aws s3 presign",
+      "--expires-in",
+      "s3://"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS KMS envelope encryption work with customer master keys and data keys?",
+    "provider": "aws",
+    "service": "kms",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "plaintext data key",
+      "encrypted data key",
+      "GenerateDataKey",
+      "envelope encryption"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the difference between Amazon OpenSearch Service provisioned clusters and serverless collections?",
+    "provider": "aws",
+    "service": "opensearch",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "OCU",
+      "OpenSearch Compute Units",
+      "indexing",
+      "search collections",
+      "provisioned nodes"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What are the default limits for Amazon API Gateway REST API payload sizes?",
+    "provider": "aws",
+    "service": "api-gateway",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "10 MB",
+      "payload",
+      "REST API",
+      "HTTP API"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Amazon ElastiCache Redis replication groups and automatic failover mechanism.",
+    "provider": "aws",
+    "service": "elasticache",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "primary node",
+      "read replica",
+      "Multi-AZ",
+      "failover",
+      "Redis cluster mode"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the maximum payload size for a Google Cloud Pub/Sub message?",
+    "provider": "gcp",
+    "service": "pubsub",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "10 MB",
+      "Pub/Sub",
+      "publish",
+      "subscriber"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Cloud Run handle automatic scaling from zero to thousands of instances?",
+    "provider": "gcp",
+    "service": "cloud-run",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "scale-to-zero",
+      "concurrency",
+      "cold start",
+      "container instance",
+      "min-instances"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which gcloud command lists all compute engine instances in a specific project?",
+    "provider": "gcp",
+    "service": "compute-engine",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "gcloud compute instances list",
+      "project",
+      "zone",
+      "status"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Google Cloud Spanner TrueTime API and distributed ACID transactions.",
+    "provider": "gcp",
+    "service": "spanner",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "TrueTime",
+      "atomic clocks",
+      "external consistency",
+      "two-phase commit",
+      "Paxos"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the default storage class for newly uploaded objects in Google Cloud Storage?",
+    "provider": "gcp",
+    "service": "cloud-storage",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "Standard",
+      "Nearline",
+      "Coldline",
+      "Archive",
+      "bucket"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Kubernetes Engine (GKE) Autopilot mode manage node provisioning and security?",
+    "provider": "gcp",
+    "service": "gke",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Autopilot",
+      "managed nodes",
+      "workload hardening",
+      "per-pod billing",
+      "SLA"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the maximum query execution timeout limit in Google BigQuery?",
+    "provider": "gcp",
+    "service": "bigquery",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "6 hours",
+      "interactive query",
+      "batch query",
+      "timeout"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Cloud Armor provide DDoS protection and Layer 7 web security filtering?",
+    "provider": "gcp",
+    "service": "cloud-armor",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "WAF",
+      "security policies",
+      "rate limiting",
+      "OWASP top 10",
+      "HTTP(S) Load Balancer"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which gcloud command deploys a Cloud Function from source code?",
+    "provider": "gcp",
+    "service": "cloud-functions",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "gcloud functions deploy",
+      "--runtime",
+      "--trigger-http",
+      "--entry-point"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Google Cloud IAM conditions and temporary access elevation.",
+    "provider": "gcp",
+    "service": "iam",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "CEL",
+      "Common Expression Language",
+      "conditional binding",
+      "timestamp",
+      "temporary"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Google Cloud Interconnect and how does Dedicated Interconnect differ from Partner Interconnect?",
+    "provider": "gcp",
+    "service": "interconnect",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "Dedicated Interconnect",
+      "Partner Interconnect",
+      "SLA",
+      "10 Gbps",
+      "100 Gbps",
+      "colocation"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Cloud Memorystore for Redis provide high availability with read replicas?",
+    "provider": "gcp",
+    "service": "memorystore",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Memorystore",
+      "Redis",
+      "Standard Tier",
+      "automatic failover",
+      "read replicas"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the maximum execution time limit for Google Cloud Functions 2nd gen?",
+    "provider": "gcp",
+    "service": "cloud-functions",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "60 minutes",
+      "3600 seconds",
+      "Cloud Run infrastructure",
+      "HTTP functions"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Google Cloud Filestore service tiers and protocol support.",
+    "provider": "gcp",
+    "service": "filestore",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "NFSv3",
+      "Basic",
+      "Enterprise",
+      "High Scale",
+      "file shares",
+      "GKE mount"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What gcloud command sets the default project for the active CLI session?",
+    "provider": "gcp",
+    "service": "gcloud",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "gcloud config set project",
+      "core/project",
+      "configuration"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the maximum blob size supported by Azure Blob Storage using block blobs?",
+    "provider": "azure",
+    "service": "blob-storage",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "190.7 TiB",
+      "block blobs",
+      "50,000 blocks",
+      "4000 MiB"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Azure Virtual Network Peering route traffic between virtual networks across different regions?",
+    "provider": "azure",
+    "service": "virtual-network",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Global VNet Peering",
+      "Microsoft backbone",
+      "private IP",
+      "gateway transit"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which Azure CLI command lists all AKS clusters in a resource group?",
+    "provider": "azure",
+    "service": "aks",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "az aks list",
+      "--resource-group",
+      "--output table"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain the architecture of Azure Front Door with Edge WAF and multi-region routing.",
+    "provider": "azure",
+    "service": "front-door",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Anycast",
+      "split TCP",
+      "WAF",
+      "SSL offload",
+      "health probes",
+      "origins"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the maximum execution timeout for Azure Functions consumption plan?",
+    "provider": "azure",
+    "service": "azure-functions",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "5 minutes",
+      "10 minutes",
+      "consumption plan",
+      "host.json",
+      "Premium plan"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Azure Managed Identity eliminate the need to store database credentials in source code?",
+    "provider": "azure",
+    "service": "entra-id",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "System-assigned",
+      "User-assigned",
+      "Entra ID",
+      "OAuth token",
+      "metadata endpoint"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which Azure CLI command creates an Azure Key Vault resource?",
+    "provider": "azure",
+    "service": "key-vault",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "az keyvault create",
+      "--name",
+      "--resource-group",
+      "--location"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Azure SQL Database hyperscale architecture with separation of compute and page servers.",
+    "provider": "azure",
+    "service": "sql-database",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Hyperscale",
+      "page servers",
+      "log service",
+      "compute replicas",
+      "RBPEX"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the difference between Azure Application Gateway and Azure Load Balancer?",
+    "provider": "azure",
+    "service": "application-gateway",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "Layer 7",
+      "Layer 4",
+      "URL path-based",
+      "cookie affinity",
+      "SSL termination"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Azure Event Hubs and how does it support Apache Kafka client applications?",
+    "provider": "azure",
+    "service": "event-hubs",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Kafka protocol",
+      "capture",
+      "consumer groups",
+      "partitions",
+      "throughput units"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which Azure CLI command restarts an Azure Web App?",
+    "provider": "azure",
+    "service": "app-service",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "az webapp restart",
+      "--name",
+      "--resource-group"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Azure Private Link secure connectivity to Azure PaaS services?",
+    "provider": "azure",
+    "service": "private-link",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Private Endpoint",
+      "private IP",
+      "VNet",
+      "data exfiltration",
+      "disable public network access"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the maximum message size supported by Azure Service Bus standard tier?",
+    "provider": "azure",
+    "service": "service-bus",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "256 KB",
+      "Premium tier",
+      "100 MB",
+      "queues",
+      "topics"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Azure Resource Graph queries and how they differ from Azure Resource Manager REST API calls.",
+    "provider": "azure",
+    "service": "resource-graph",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "KQL",
+      "Kusto Query Language",
+      "cross-subscription",
+      "governance",
+      "fast indexing"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Azure Sentinel (Microsoft Sentinel) and how does it collect multi-cloud security telemetry?",
+    "provider": "azure",
+    "service": "sentinel",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "SIEM",
+      "SOAR",
+      "data connectors",
+      "Log Analytics workspace",
+      "analytics rules"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare Amazon Aurora vs Google Cloud Spanner vs Azure Cosmos DB for globally distributed workloads.",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "ACID",
+      "Global Tables",
+      "TrueTime",
+      "consistency levels",
+      "multi-write"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What are the architectural trade-offs between AWS Transit Gateway, Google Cloud Network Connectivity Center, and Azure Virtual WAN?",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "hub-and-spoke",
+      "inter-region",
+      "BGP",
+      "VPN",
+      "interconnect"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare AWS EKS vs Google GKE vs Azure AKS in terms of managed control plane pricing and upgrade automation.",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "hourly cluster fee",
+      "Autopilot",
+      "auto-upgrade",
+      "node pools",
+      "SLA"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do object storage lifecycle policies compare between Amazon S3, Google Cloud Storage, and Azure Blob Storage?",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "lifecycle rules",
+      "Glacier",
+      "Coldline",
+      "Archive tier",
+      "early deletion fee"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare AWS IAM Roles Anywhere vs GCP Workload Identity Federation vs Azure Workload ID for multi-cloud authentication.",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "OIDC",
+      "x509 certificates",
+      "short-lived credentials",
+      "zero-secrets",
+      "token exchange"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What are the differences between AWS Secrets Manager, GCP Secret Manager, and Azure Key Vault?",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "versioning",
+      "automatic rotation",
+      "pricing per secret",
+      "KMS integration"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare serverless container platforms: AWS App Runner vs GCP Cloud Run vs Azure Container Apps.",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "KEDA",
+      "concurrency",
+      "custom domains",
+      "VPC egress",
+      "pricing model"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do managed relational database maintenance windows and automated backups compare between RDS, Cloud SQL, and Azure Database for PostgreSQL?",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "retention",
+      "point-in-time recovery",
+      "maintenance window",
+      "read replicas"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS calculate Amazon S3 intelligent tiering pricing and monitoring fees?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "pricing",
+    "expected_keywords": [
+      "monitoring fee",
+      "per 1,000 objects",
+      "frequent access",
+      "infrequent access",
+      "archive instant"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the cost breakdown of running an AWS Lambda function with 1024 MB memory for 10 million invocations?",
+    "provider": "aws",
+    "service": "lambda",
+    "query_type": "pricing",
+    "expected_keywords": [
+      "GB-seconds",
+      "$0.20 per 1M requests",
+      "free tier",
+      "execution duration"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Google Cloud BigQuery on-demand analysis pricing versus BigQuery editions capacity pricing.",
+    "provider": "gcp",
+    "service": "bigquery",
+    "query_type": "pricing",
+    "expected_keywords": [
+      "$6.25 per TB",
+      "slots",
+      "Standard Edition",
+      "Enterprise Edition",
+      "autoscaling"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Azure Cosmos DB calculate Request Units (RU/s) pricing for autoscale collections?",
+    "provider": "azure",
+    "service": "cosmos-db",
+    "query_type": "pricing",
+    "expected_keywords": [
+      "RU/s",
+      "Request Units",
+      "autoscale",
+      "10:1 ratio",
+      "hourly cost per 100 RU/s"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the pricing difference between AWS Savings Plans and Standard Reserved Instances?",
+    "provider": "aws",
+    "service": "ec2",
+    "query_type": "pricing",
+    "expected_keywords": [
+      "Compute Savings Plans",
+      "EC2 Instance Savings Plans",
+      "commitment",
+      "flexibility",
+      "marketplace"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How are Google Cloud Egress traffic charges calculated between GCP regions versus to the public internet?",
+    "provider": "gcp",
+    "service": "vpc",
+    "query_type": "pricing",
+    "expected_keywords": [
+      "egress",
+      "inter-region",
+      "Standard tier network",
+      "Premium tier network",
+      "GB tiering"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What are the costs associated with an Amazon NAT Gateway in terms of hourly fees and data processing?",
+    "provider": "aws",
+    "service": "vpc",
+    "query_type": "pricing",
+    "expected_keywords": [
+      "$0.045 per hour",
+      "data processing fee per GB",
+      "VPC endpoints",
+      "cost optimization"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Azure VM Spot Instances pricing and eviction policy considerations.",
+    "provider": "azure",
+    "service": "virtual-machines",
+    "query_type": "pricing",
+    "expected_keywords": [
+      "Spot discount",
+      "eviction rate",
+      "capacity",
+      "30-second notice",
+      "batch workloads"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Why is my Amazon EC2 instance unreachable over SSH and what troubleshooting steps diagnose security group vs routing issues?",
+    "provider": "aws",
+    "service": "ec2",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "Security Group port 22",
+      "Network ACL",
+      "Internet Gateway",
+      "Route Table 0.0.0.0/0",
+      "VPC Reachability Analyzer"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I troubleshoot an AWS Lambda Task timed out after 3.00 seconds error?",
+    "provider": "aws",
+    "service": "lambda",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "timeout setting",
+      "VPC ENI initialization",
+      "database connection pool",
+      "CloudWatch Logs",
+      "X-Ray"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What causes an HTTP 502 Bad Gateway error on an AWS Application Load Balancer behind an ECS cluster?",
+    "provider": "aws",
+    "service": "alb",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "health check path",
+      "target group",
+      "container deregistration",
+      "keepalive timeout",
+      "security group"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I fix Google Cloud Run error Container failed to start and listen on the port specified by the PORT environment variable?",
+    "provider": "gcp",
+    "service": "cloud-run",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "PORT env var",
+      "0.0.0.0 host binding",
+      "startup timeout",
+      "Dockerfile CMD",
+      "Cloud Logging"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I troubleshoot GKE pods stuck in CrashLoopBackOff or OOMKilled state?",
+    "provider": "gcp",
+    "service": "gke",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "kubectl logs --previous",
+      "kubectl describe pod",
+      "OOMKilled exit code 137",
+      "memory limits",
+      "dmesg"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Why does an Azure App Service return 500.30 In-Process Startup Failure for a .NET Core web app?",
+    "provider": "azure",
+    "service": "app-service",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "stdoutLogEnabled",
+      "web.config",
+      "Kudu console",
+      "missing dependencies",
+      "Event Viewer"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I resolve AWS IAM error User is not authorized to perform sts:AssumeRole on resource?",
+    "provider": "aws",
+    "service": "iam",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "Trust relationship policy",
+      "AssumeRolePolicyDocument",
+      "Principal",
+      "sts:AssumeRole",
+      "ExternalId"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I fix Amazon S3 403 Forbidden AccessDenied error when bucket policy and IAM policy both exist?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "Block Public Access",
+      "KMS key policy",
+      "explicit Deny",
+      "object ownership",
+      "cross-account"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I diagnose high latency and throttling on Amazon DynamoDB provisioned tables?",
+    "provider": "aws",
+    "service": "dynamodb",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "ProvisionedThroughputExceededException",
+      "hot partition key",
+      "CloudWatch ThrottledRequests",
+      "auto-scaling",
+      "GSI"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do I resolve Google Cloud Pub/Sub subscriber unacknowledged messages building up and consumer lag?",
+    "provider": "gcp",
+    "service": "pubsub",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "ack_deadline_seconds",
+      "dead-letter topic",
+      "flow control",
+      "consumer thread starvation",
+      "backoff"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS Global Accelerator route client traffic to the nearest regional endpoint using anycast IP addresses?",
+    "provider": "aws",
+    "service": "global-accelerator",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Anycast",
+      "static IP",
+      "edge locations",
+      "endpoint groups",
+      "health checks"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the difference between Amazon S3 Standard-Infrequent Access and One Zone-IA storage classes?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "3 Availability Zones",
+      "single AZ",
+      "durability 99.999999999%",
+      "retrieval fee"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS Lake Formation manage fine-grained column-level and row-level access control over data lakes?",
+    "provider": "aws",
+    "service": "lake-formation",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "data filters",
+      "column-level access",
+      "LF-Tags",
+      "Glue Data Catalog",
+      "IAM"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which CLI command initiates an AWS Systems Manager Run Command document on targeted EC2 instances?",
+    "provider": "aws",
+    "service": "ssm",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "aws ssm send-command",
+      "--document-name",
+      "--targets"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Amazon RDS Proxy preserve database connections during multi-AZ failovers?",
+    "provider": "aws",
+    "service": "rds-proxy",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "connection pooling",
+      "failover time reduction",
+      "Secrets Manager",
+      "pinning"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is AWS AppConfig and how does it execute safe feature flag rollouts with validation alarms?",
+    "provider": "aws",
+    "service": "appconfig",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "deployment strategy",
+      "validation monitors",
+      "bake time",
+      "CloudWatch alarm rollback"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Amazon S3 Object Lock compliance mode versus governance mode for WORM storage.",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Compliance mode",
+      "Governance mode",
+      "retention period",
+      "legal hold",
+      "root user"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What are the throughput limits for Amazon Kinesis Data Firehose delivery streams to Amazon S3?",
+    "provider": "aws",
+    "service": "firehose",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "buffer size",
+      "buffer interval",
+      "1 MB to 128 MB",
+      "60 to 900 seconds"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS Network Firewall inspect stateful TLS and HTTP traffic between VPC subnets?",
+    "provider": "aws",
+    "service": "network-firewall",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Suricata",
+      "stateful rules",
+      "domain list filtering",
+      "firewall endpoint"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the difference between Amazon Redshift provisioned clusters and Redshift Serverless workgroups?",
+    "provider": "aws",
+    "service": "redshift",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "RPU",
+      "Redshift Processing Units",
+      "concurrency scaling",
+      "namespace",
+      "workgroup"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Cloud Dataflow execute unified stream and batch processing pipelines using Apache Beam?",
+    "provider": "gcp",
+    "service": "dataflow",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Apache Beam",
+      "windowing",
+      "triggers",
+      "watermarks",
+      "autoscaling"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Google Cloud Workload Identity Federation and how does it securely authenticate GitHub Actions runners?",
+    "provider": "gcp",
+    "service": "iam",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Workload Identity Pool",
+      "OIDC provider",
+      "attribute mapping",
+      "service account impersonation"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Cloud Cloud SQL manage high availability and automated failover across zones?",
+    "provider": "gcp",
+    "service": "cloud-sql",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "primary instance",
+      "standby instance",
+      "regional persistent disk",
+      "failover"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which gcloud command exports BigQuery table data into Google Cloud Storage in Parquet format?",
+    "provider": "gcp",
+    "service": "bigquery",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "bq extract",
+      "--destination_format=PARQUET",
+      "gs://"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Google Cloud Anthos Config Management and gitops-driven multi-cluster policy enforcement.",
+    "provider": "gcp",
+    "service": "anthos",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Config Sync",
+      "Policy Controller",
+      "GitOps",
+      "OPA",
+      "admission webhook"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the difference between Google Cloud Datastore mode and Native mode in Cloud Firestore?",
+    "provider": "gcp",
+    "service": "firestore",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "Datastore API",
+      "Native mode",
+      "real-time listeners",
+      "mobile SDK",
+      "subcollections"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Cloud BeyondCorp Enterprise implement zero-trust application proxy access without VPNs?",
+    "provider": "gcp",
+    "service": "beyondcorp",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "IAP",
+      "Identity-Aware Proxy",
+      "context-aware access",
+      "device posture",
+      "OAuth 2.0"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What gcloud command creates a Google Cloud Storage bucket with uniform bucket-level access enabled?",
+    "provider": "gcp",
+    "service": "cloud-storage",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "gcloud storage buckets create",
+      "--uniform-bucket-level-access",
+      "gs://"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Google Cloud Eventarc and how it routes Cloud Audit Logs events to Cloud Run targets.",
+    "provider": "gcp",
+    "service": "eventarc",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Eventarc trigger",
+      "CloudEvents",
+      "Pub/Sub transport",
+      "audit log filter"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Google Cloud Vertex AI Feature Store and how does it serve online low-latency inference features?",
+    "provider": "gcp",
+    "service": "vertex-ai",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Feature Store",
+      "Bigtable serving",
+      "online store",
+      "batch ingestion",
+      "point-in-time lookup"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Azure Cosmos DB handle analytical workloads using Azure Synapse Link and HTAP without impacting transactional throughput?",
+    "provider": "azure",
+    "service": "cosmos-db",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Synapse Link",
+      "analytical store",
+      "HTAP",
+      "columnar format",
+      "no RU consumption"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Azure Virtual Desktop and how does multi-session Windows 11 Enterprise optimize host pool resource utilization?",
+    "provider": "azure",
+    "service": "avd",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "host pool",
+      "multi-session",
+      "FSLogix profile containers",
+      "session host"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which Azure CLI command configures autoscaling rules for an Azure App Service Plan?",
+    "provider": "azure",
+    "service": "app-service",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "az monitor autoscale create",
+      "--resource-group",
+      "--min-count",
+      "--max-count"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Azure Bastion Developer tier differ from Basic and Standard SKU Bastion hosts?",
+    "provider": "azure",
+    "service": "azure-bastion",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "Developer SKU",
+      "no dedicated subnet",
+      "shared infrastructure",
+      "free or low cost",
+      "single VM"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Azure Container Apps revision management and zero-downtime traffic splitting.",
+    "provider": "azure",
+    "service": "container-apps",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "revisions",
+      "traffic weighting",
+      "blue-green deployment",
+      "canary release"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the retention period limit for Azure Backup operational tiers and vault-standard tiers?",
+    "provider": "azure",
+    "service": "backup",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "Recovery Services Vault",
+      "instant recovery snapshot",
+      "30 days",
+      "99 years"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Azure Arc enable Kubernetes cluster management and Azure Policy enforcement on on-premises infrastructure?",
+    "provider": "azure",
+    "service": "azure-arc",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "connected cluster",
+      "Arc agents",
+      "Azure Policy for Kubernetes",
+      "GitOps"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Azure Logic Apps Consumption model versus Standard single-tenant runtime?",
+    "provider": "azure",
+    "service": "logic-apps",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "single-tenant",
+      "App Service environment",
+      "VNet integration",
+      "local debugging"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Azure Firewall Premium perform TLS inspection and IDPS threat detection?",
+    "provider": "azure",
+    "service": "azure-firewall",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "TLS inspection",
+      "intermediate CA",
+      "Key Vault certificate",
+      "IDPS signatures",
+      "URL filtering"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the difference between Azure NetApp Files and Azure Files Premium tiers?",
+    "provider": "azure",
+    "service": "azure-netapp-files",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "NetApp ONTAP",
+      "sub-millisecond latency",
+      "SMB",
+      "NFSv4.1",
+      "IOPS per allocated TiB"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do you troubleshoot cross-account Amazon S3 replication failure where objects are not replicating to the target bucket?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "KMS key decrypt permission",
+      "replication IAM role",
+      "S3 versioning",
+      "destination bucket ownership"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What causes Azure AKS pod eviction with status DiskPressure and how do you resolve it?",
+    "provider": "azure",
+    "service": "aks",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "ephemeral OS disk",
+      "image garbage collection",
+      "emptyDir volume",
+      "node disk capacity"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Why is Google Cloud Compute Engine instance startup script not executing and where are the logs located?",
+    "provider": "gcp",
+    "service": "compute-engine",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "startup-script metadata",
+      "syslog",
+      "serial port console output",
+      "google-startup-scripts.service"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do you resolve AWS CloudFormation circular dependency errors between security groups and load balancers?",
+    "provider": "aws",
+    "service": "cloudformation",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "AWS::EC2::SecurityGroupIngress",
+      "standalone ingress rule",
+      "DependsOn",
+      "circular dependency"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare Infrastructure as Code tools: Terraform vs OpenTofu vs AWS CDK vs Pulumi for multi-cloud deployments.",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "state management",
+      "HCL",
+      "imperative languages",
+      "drift detection",
+      "provider ecosystem"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS App Mesh provide service mesh capabilities with Envoy proxies?",
+    "provider": "aws",
+    "service": "app-mesh",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Envoy proxy",
+      "virtual node",
+      "virtual router",
+      "mTLS",
+      "traffic routing"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Google Cloud Cloud Deploy and how does it manage progressive canary delivery to GKE and Cloud Run?",
+    "provider": "gcp",
+    "service": "cloud-deploy",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "delivery pipeline",
+      "targets",
+      "releases",
+      "canary rollout",
+      "approval"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Azure Chaos Studio and how it injects synthetic infrastructure faults into production systems.",
+    "provider": "azure",
+    "service": "chaos-studio",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "chaos experiment",
+      "fault injection",
+      "targets",
+      "agent-based",
+      "service-direct"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is AWS DataSync and how does it accelerate data transfer between on-premises storage and Amazon S3?",
+    "provider": "aws",
+    "service": "datasync",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "DataSync agent",
+      "task",
+      "NFS",
+      "SMB",
+      "encryption in transit"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Cloud Private Service Connect enable private consumption of third-party SaaS services without external IP addresses?",
+    "provider": "gcp",
+    "service": "private-service-connect",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "PSC endpoint",
+      "service attachment",
+      "producer VPC",
+      "consumer VPC"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Azure confidential computing and how do hardware enclaves protect data in use?",
+    "provider": "azure",
+    "service": "confidential-computing",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "AMD SEV-SNP",
+      "Intel SGX",
+      "hardware enclave",
+      "attestation",
+      "data in use"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS CloudTrail Lake enable SQL-based querying of audit and security activity events without Athena setup?",
+    "provider": "aws",
+    "service": "cloudtrail",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "event data store",
+      "SQL query",
+      "retention up to 7 years",
+      "audit logs"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Google Cloud AlloyDB for PostgreSQL and how does its columnar engine accelerate analytical queries?",
+    "provider": "gcp",
+    "service": "alloydb",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "AlloyDB",
+      "columnar engine",
+      "vector search",
+      "disaggregated compute and storage"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Explain Azure Route Server and how it exchanges BGP routes dynamically with network virtual appliances.",
+    "provider": "azure",
+    "service": "route-server",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "BGP peer",
+      "NVA",
+      "user-defined routes",
+      "dynamic routing",
+      "VNet"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does AWS Glue Elastic Views maintain materialized views across heterogeneous operational databases?",
+    "provider": "aws",
+    "service": "glue",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "materialized view",
+      "PartiQL",
+      "DynamoDB",
+      "Aurora",
+      "CDC"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Google Cloud Batch and how does it schedule large-scale batch computing jobs with Spot VMs?",
+    "provider": "gcp",
+    "service": "batch",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "Cloud Batch",
+      "job specification",
+      "task groups",
+      "Spot VMs",
+      "parallel execution"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Azure Load Testing run high-scale Apache JMeter stress tests against web applications?",
+    "provider": "azure",
+    "service": "load-testing",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "JMeter",
+      "test engines",
+      "client metrics",
+      "server-side metrics",
+      "CI/CD integration"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do you configure Amazon S3 Cross-Region Replication with replica KMS key re-encryption?",
+    "provider": "aws",
+    "service": "s3",
+    "query_type": "conceptual",
+    "expected_keywords": [
+      "CRR",
+      "KMS re-encryption",
+      "destination KMS key",
+      "replication rule",
+      "versioning"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What causes Google Cloud VPC flow logs latency and how do you configure sampling rate and aggregation interval?",
+    "provider": "gcp",
+    "service": "vpc",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "aggregation_interval",
+      "flow_sampling",
+      "BigQuery export",
+      "metadata filter"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How do you troubleshoot Azure App Service high memory usage and memory leaks using diagnostic tools?",
+    "provider": "azure",
+    "service": "app-service",
+    "query_type": "troubleshooting",
+    "expected_keywords": [
+      "memory dump",
+      "Diagnose and solve problems",
+      "profiler",
+      "auto-heal rules"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Compare CI/CD pipeline capabilities: AWS CodePipeline vs Google Cloud Build vs Azure DevOps Pipelines.",
+    "provider": "multi-cloud",
+    "service": "cross-cloud",
+    "query_type": "comparison",
+    "expected_keywords": [
+      "stages",
+      "build agents",
+      "service hooks",
+      "YAML pipelines",
+      "deployment gates"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Amazon S3 Vectors used for in AWS cloud architectures?",
+    "provider": "aws",
+    "service": "s3-vectors",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "S3 Vectors",
+      "vector",
+      "object storage",
+      "Amazon S3"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Amazon Aurora DSQL and how does it provide distributed SQL?",
+    "provider": "aws",
+    "service": "aurora-dsql",
+    "query_type": "conceptual_comparison",
+    "expected_keywords": [
+      "Aurora DSQL",
+      "distributed",
+      "Postgres",
+      "PostgreSQL"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Azure HorizonDB for managed PostgreSQL workloads?",
+    "provider": "azure",
+    "service": "horizondb",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "HorizonDB",
+      "Azure",
+      "PostgreSQL",
+      "Postgres"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Amazon Kiro and what happened to Amazon Q Developer?",
+    "provider": "aws",
+    "service": "kiro",
+    "query_type": "naming_lifecycle",
+    "expected_keywords": [
+      "Kiro",
+      "Amazon Q Developer",
+      "sunset",
+      "EOL"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the Azure Cobalt 200 custom processor architecture?",
+    "provider": "azure",
+    "service": "cobalt-200",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "Cobalt 200",
+      "Azure",
+      "CPU"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is AWS Lambda Durable Functions for multi-step serverless workflows?",
+    "provider": "aws",
+    "service": "lambda-durable-functions",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "Lambda Durable Functions",
+      "serverless",
+      "workflow",
+      "durable"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What capabilities do Amazon Nova 2 Lite, Nova 2 Omni, and Nova 2 Sonic provide?",
+    "provider": "aws",
+    "service": "nova-2",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "Nova 2",
+      "multimodal",
+      "reasoning"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the Gemini Enterprise Agent Platform and GEAP Agent Studio in Google Cloud?",
+    "provider": "gcp",
+    "service": "gemini-enterprise",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "Gemini Enterprise",
+      "Agent Platform",
+      "Google Cloud"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is Trainium3 UltraServers designed for in cloud AI training?",
+    "provider": "aws",
+    "service": "trainium3",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "Trainium3",
+      "UltraServers",
+      "AI"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What autonomous operations capabilities does the AWS DevOps Agent provide?",
+    "provider": "aws",
+    "service": "devops-agent",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "DevOps Agent",
+      "AWS",
+      "agent"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does the Strands Agents SDK integrate with AgentCore Gateway and MCP?",
+    "provider": "aws",
+    "service": "strands-sdk",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "Strands",
+      "AgentCore Gateway",
+      "MCP"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "How does Google Cloud BigQuery Cross-Cloud Lakehouse federate across AWS and Azure?",
+    "provider": "gcp",
+    "service": "cross-cloud-lakehouse",
+    "query_type": "conceptual_comparison",
+    "expected_keywords": [
+      "Cross-Cloud Lakehouse",
+      "BigQuery",
+      "AWS",
+      "Azure"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "Which open-weight models are offered on the Amazon Bedrock open-weight marketplace?",
+    "provider": "aws",
+    "service": "bedrock-open-weight",
+    "query_type": "exact_fact",
+    "expected_keywords": [
+      "Bedrock",
+      "open-weight",
+      "Mistral"
+    ],
+    "requires_web": false
+  },
+  {
+    "question": "What is the lifecycle status of AWS CodeCommit and Google Cloud Source Repositories?",
+    "provider": "multi-cloud",
+    "service": "codecommit-csr",
+    "query_type": "naming_lifecycle",
+    "expected_keywords": [
+      "CodeCommit",
+      "Cloud Source Repositories",
+      "deprecated"
+    ],
+    "requires_web": false
+  }
+]

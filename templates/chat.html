@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="csrf-token" content="{{ csrf_token }}" />
+  <title>CloudGPT | Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/chat.css" />
+  <script src="/static/js/vendor/marked.min.js"></script>
+  <script src="/static/js/vendor/purify.min.js"></script>
+  <script src="/static/js/vendor/highlight.min.js"></script>
+</head>
+<body>
+  <div class="app-container" data-user-tier="{{ effective_tier or user_tier }}" data-user-name="{{ user_name or (user_email.split('@')[0] if user_email else '') }}" data-user-settings="{{ (user_settings or {}) | tojson | e }}">
+    
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">CloudGPT</div>
+      </div>
+      
+      <div class="sidebar-content">
+        <button id="new-chat-btn" class="new-chat-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          New Conversation
+        </button>
+
+        <div class="history-section">
+          <div class="section-title">
+            <span>Conversation History</span>
+          </div>
+
+          <div class="history-search-container">
+            <div class="history-search-wrapper">
+              <svg class="history-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input id="history-search-input" type="text" placeholder="Search conversations..." autocomplete="off" spellcheck="false" aria-label="Search conversation history" />
+              <button id="history-search-clear" class="history-search-clear hidden" type="button" aria-label="Clear search" title="Clear search">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div id="history-scroll-container" class="history-scroll-container">
+            <ul id="history-list" class="history-list" role="list">
+              <li class="history-item active">
+                <div class="history-text-container">
+                  <span class="history-title">New Conversation</span>
+                  <span class="history-time">now</span>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="token-usage" id="token-usage-card">
+          <div class="usage-row">
+            <span class="usage-label">Daily Limit</span>
+            <span class="usage-val" id="usage-val-day">
+              {% if limit_day == "Unlimited" or not limit_day %}
+              {{ "{:,}".format(tokens_day or 0) }} / ∞
+              {% else %}
+              {{ "{:,}".format(tokens_day or 0) }} / {{ "{:,}".format(limit_day) }}
+              {% endif %}
+            </span>
+          </div>
+          <div class="usage-progress-bar">
+            {% set day_pct = 0 if (limit_day == 'Unlimited' or not limit_day or limit_day <= 0) else ([[((tokens_day or 0) / limit_day * 100) | round(1), 100] | min, 0] | max) %}
+            <div class="usage-progress-fill day-fill" id="usage-progress-day" style="width: {{ day_pct }}%;"></div>
+          </div>
+          <div class="usage-row">
+            <span class="usage-label">Monthly Total</span>
+            <span class="usage-val" id="usage-val-month">
+              {% if limit_month == "Unlimited" or not limit_month %}
+              {{ "{:,}".format(tokens_month or 0) }} / ∞
+              {% else %}
+              {{ "{:,}".format(tokens_month or 0) }} / {{ "{:,}".format(limit_month) }}
+              {% endif %}
+            </span>
+          </div>
+          <div class="usage-progress-bar">
+            {% set month_pct = 0 if (limit_month == 'Unlimited' or not limit_month or limit_month <= 0) else ([[((tokens_month or 0) / limit_month * 100) | round(1), 100] | min, 0] | max) %}
+            <div class="usage-progress-fill month-fill" id="usage-progress-month" style="width: {{ month_pct }}%;"></div>
+          </div>
+        </div>
+
+        <div class="user-profile">
+          <div class="user-profile-left">
+            <div class="avatar">{{ (user_name.split('@')[0] if user_name else (user_email.split('@')[0] if user_email else 'U'))[:1] | upper }}</div>
+            <div class="user-info">
+              <div class="name">{{ user_name or (user_email.split('@')[0] if user_email else 'User') }}</div>
+              <div class="tier-badge">{{ user_tier or 'Lite' }} Tier</div>
+            </div>
+          </div>
+          <div class="user-profile-actions">
+            {% if user_tier and user_tier|lower not in ['max', 'developer'] and not is_unlimited %}
+            <a href="/billing" class="icon-btn upgrade-btn" title="Upgrade Plan" aria-label="Upgrade Plan">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+            </a>
+            {% endif %}
+            <button class="icon-btn settings-btn" id="settings-btn" title="Settings" aria-label="Settings">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat Workspace -->
+    <main class="workspace chat-main">
+      <header class="workspace-header">
+        <div class="header-left">
+          <span class="crumb active" id="current-chat-title" style="font-size: 18px; font-weight: 600;">New Conversation</span>
+        </div>
+      </header>
+
+      <div class="chat-stream" id="chat-container">
+        <!-- Messages will appear here -->
+        <!-- Pipeline stage progress panel is injected here by chat.js -->
+        <div id="pipeline-stage-anchor" style="display:none;"></div>
+
+        <!-- ChatGPT-Style Greeting for Empty State -->
+        <div id="chat-empty-state" class="chat-empty-state chatgpt-empty-state">
+          <div class="chatgpt-greeting-wrapper">
+            <h1 class="chatgpt-greeting-title" id="chatgpt-greeting-title">
+              {% set username = user_name or (user_email.split('@')[0] if user_email else '') %}
+              {% if username %}
+                Hello, {{ username }}
+              {% else %}
+                What can I help with today?
+              {% endif %}
+            </h1>
+            <p class="chatgpt-greeting-subtitle" id="chatgpt-greeting-subtitle">
+              {% if username %}
+                What can I help with today?
+              {% else %}
+                Ask anything about cloud architecture, pricing, troubleshooting, and security.
+              {% endif %}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Floating Input Area -->
+      <div class="floating-input-wrapper">
+        <div class="input-card">
+          <!-- Hidden Native File Picker -->
+          <input type="file" id="local-file-picker" multiple style="display: none;" />
+          
+          <!-- Staged Local File Chips -->
+          <div id="file-chip-container" class="file-chip-container hidden"></div>
+          
+          <!-- Input Text Area -->
+          <textarea id="chat-input" placeholder="Ask anything..." rows="1"></textarea>
+          
+          <!-- Bottom Toolbar -->
+          <div class="input-toolbar">
+            <div class="toolbar-left">
+              <!-- Add Local Files (+) Button -->
+              <button type="button" id="attach-btn" class="attach-btn" title="Add files from local computer" aria-label="Add local files">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </button>
+
+              <!-- Model Selector Dropdown Trigger -->
+              <div class="model-dropdown-container">
+                <button type="button" id="model-selector-btn" class="model-selector-btn" aria-haspopup="true" aria-expanded="false" title="Select AI Model">
+                  <span id="selected-model-name">{{ default_model or ('Apex' if allowed_models and 'Apex' in allowed_models else ('Core' if allowed_models and 'Core' in allowed_models else 'Lite')) }}</span>
+                  <svg class="chevron-down" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+
+                <!-- Model Selection Popover -->
+                <div id="model-popover" class="model-popover hidden" role="menu">
+                  <div class="popover-header">Model</div>
+
+                  <div class="model-option {% if (default_model and default_model == 'Apex') or (not default_model and allowed_models and 'Apex' in allowed_models) %}active{% elif not allowed_models or 'Apex' not in allowed_models %}disabled{% endif %}" data-model="Apex" data-tier-allowed="{% if allowed_models and 'Apex' in allowed_models %}true{% else %}false{% endif %}" role="menuitem" tabindex="0">
+                    <span class="model-title">Apex</span>
+                  </div>
+
+                  <div class="model-option {% if (default_model and default_model == 'Core') or (not default_model and allowed_models and 'Core' in allowed_models and 'Apex' not in allowed_models) %}active{% elif not allowed_models or 'Core' not in allowed_models %}disabled{% endif %}" data-model="Core" data-tier-allowed="{% if allowed_models and 'Core' in allowed_models %}true{% else %}false{% endif %}" role="menuitem" tabindex="0">
+                    <span class="model-title">Core</span>
+                  </div>
+
+                  <div class="model-option {% if (default_model and default_model == 'Lite') or (not default_model and (not allowed_models or ('Apex' not in allowed_models and 'Core' not in allowed_models))) %}active{% endif %}" data-model="Lite" data-tier-allowed="true" role="menuitem" tabindex="0">
+                    <span class="model-title">Lite</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Thinking Mode Selector -->
+              <div class="model-dropdown-container">
+                <button type="button" id="thinking-selector-btn" class="model-selector-btn thinking-selector-btn" aria-haspopup="true" aria-expanded="false" title="Adjust thinking (token budget)">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-1 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path>
+                    <path d="M9 18h6"></path>
+                    <path d="M10 22h4"></path>
+                  </svg>
+                  <span id="selected-thinking-level">{{ default_thinking }}</span>
+                  <svg class="chevron-down" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+
+                <div id="thinking-popover" class="model-popover hidden" role="menu">
+                  <div class="popover-header">Thinking</div>
+
+                  <div class="model-option {% if default_thinking == 'Low' %}active{% endif %}" data-thinking="Low" data-tier-allowed="true" role="menuitem" tabindex="0">
+                    <div class="model-info">
+                      <span class="model-title">Low</span>
+                    </div>
+                  </div>
+
+                  <div class="model-option {% if not allowed_thinking_levels or 'Medium' not in allowed_thinking_levels %}disabled{% elif default_thinking == 'Medium' %}active{% endif %}" data-thinking="Medium" data-tier-allowed="{% if allowed_thinking_levels and 'Medium' in allowed_thinking_levels %}true{% else %}false{% endif %}" role="menuitem" tabindex="0">
+                    <div class="model-info">
+                      <span class="model-title">Medium</span>
+                    </div>
+                  </div>
+
+                  <div class="model-option {% if not allowed_thinking_levels or 'High' not in allowed_thinking_levels %}disabled{% elif default_thinking == 'High' %}active{% endif %}" data-thinking="High" data-tier-allowed="{% if allowed_thinking_levels and 'High' in allowed_thinking_levels %}true{% else %}false{% endif %}" role="menuitem" tabindex="0">
+                    <div class="model-info">
+                      <span class="model-title">High</span>
+                    </div>
+                  </div>
+
+                  <div class="model-option {% if not allowed_thinking_levels or 'Max' not in allowed_thinking_levels %}disabled{% elif default_thinking == 'Max' %}active{% endif %}" data-thinking="Max" data-tier-allowed="{% if allowed_thinking_levels and 'Max' in allowed_thinking_levels %}true{% else %}false{% endif %}" role="menuitem" tabindex="0">
+                    <div class="model-info">
+                      <span class="model-title">Max</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="toolbar-right">
+              <!-- Audio Wave Visualizer (Active during listening) -->
+              <div id="audio-visualizer" class="audio-visualizer hidden" aria-hidden="true">
+                <span class="wave-bar"></span>
+                <span class="wave-bar"></span>
+                <span class="wave-bar"></span>
+                <span class="wave-bar"></span>
+              </div>
+
+              <!-- Mic Button -->
+              <button type="button" id="mic-btn" class="mic-btn" title="Voice Input (Ctrl+M)" aria-label="Voice Input">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+              </button>
+
+              <!-- Send Button -->
+              <button type="button" id="send-btn" class="send-btn" disabled title="Send message" aria-label="Send message">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Memory Toast Notification -->
+  <div id="memory-toast" class="memory-toast hidden" role="status" aria-live="polite">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2a5 5 0 0 1 5 5v1a5 5 0 0 1 1 9.9V19a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-1.1A5 5 0 0 1 7 8V7a5 5 0 0 1 5-5z"></path>
+    </svg>
+    <div class="memory-toast-content">
+      <span class="memory-toast-title">Preference Saved</span>
+      <span id="memory-toast-text" class="memory-toast-text"></span>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-backdrop hidden"
+       role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+    <div class="modal-card settings-modal-card">
+
+      <!-- Header -->
+      <div class="modal-header">
+        <div class="modal-header-left">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <h2 id="settings-modal-title" class="modal-title">Settings</h2>
+        </div>
+        <button id="settings-modal-close" class="modal-close-btn" type="button"
+                aria-label="Close settings">&times;</button>
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="settings-tab-bar" role="tablist" aria-label="Settings sections">
+        <button class="settings-tab active" data-tab="account"    role="tab" aria-selected="true">Account</button>
+        <button class="settings-tab"        data-tab="memory"     role="tab" aria-selected="false">Memory</button>
+        <button class="settings-tab"        data-tab="preferences" role="tab" aria-selected="false">Preferences</button>
+        <button class="settings-tab"        data-tab="subscription" role="tab" aria-selected="false">Subscription</button>
+        <button class="settings-tab"        data-tab="about"      role="tab" aria-selected="false">About</button>
+      </div>
+
+      <!-- Tab Panels -->
+      <div class="modal-body settings-modal-body">
+
+        <!-- ── Account Tab ── -->
+        <div class="settings-panel active" data-panel="account" role="tabpanel">
+          <!-- Display Name -->
+          <div class="settings-group">
+            <label class="settings-label" for="settings-name-input">Display Name</label>
+            <div class="settings-field-row">
+              <input type="text" id="settings-name-input" class="settings-text-input"
+                     value="{{ user_name or '' }}" maxlength="80" autocomplete="off"
+                     placeholder="Your name" aria-label="Display name" />
+              <button type="button" id="settings-save-name-btn" class="settings-action-btn">
+                Save
+              </button>
+            </div>
+            <span id="settings-name-feedback" class="settings-feedback" aria-live="polite"></span>
+          </div>
+
+          <!-- Email -->
+          <div class="settings-group">
+            <label class="settings-label">Email Address</label>
+            <div class="settings-readonly-value">
+              <span>{{ user_email or '' }}</span>
+            </div>
+          </div>
+
+          <!-- Change Password (hidden for OAuth-only accounts) -->
+          {% if has_password %}
+          <div class="settings-group" id="settings-password-group">
+            <label class="settings-label">Password</label>
+            <button type="button" id="settings-change-password-toggle"
+                    class="settings-action-btn settings-action-btn--outline">
+              Change Password
+            </button>
+            <div id="settings-password-fields" class="settings-password-fields hidden">
+              <input type="password" id="settings-current-password" class="settings-text-input"
+                     placeholder="Current password" autocomplete="current-password" />
+              <input type="password" id="settings-new-password" class="settings-text-input"
+                     placeholder="New password (8+ chars, upper, lower, number, symbol)" autocomplete="new-password" />
+              <input type="password" id="settings-confirm-password" class="settings-text-input"
+                     placeholder="Confirm new password" autocomplete="new-password" />
+              <div class="settings-field-row">
+                <button type="button" id="settings-save-password-btn" class="settings-action-btn">
+                  Update Password
+                </button>
+                <button type="button" id="settings-cancel-password-btn"
+                        class="settings-action-btn settings-action-btn--ghost">
+                  Cancel
+                </button>
+              </div>
+              <span id="settings-password-feedback" class="settings-feedback" aria-live="polite"></span>
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- Account Created / Member info -->
+          <div class="settings-group settings-group--meta">
+            <span class="settings-meta-label">Account Tier</span>
+            <span class="settings-meta-value">{{ user_tier or 'Lite' }}</span>
+          </div>
+
+          <!-- Sign Out — bottom of account tab -->
+          <div class="settings-group settings-signout-group">
+            <form action="/logout" method="post" class="settings-logout-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+              <button type="submit" class="settings-action-btn settings-action-btn--danger">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     width="14" height="14" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                  <polyline points="16 17 21 12 16 7"></polyline>
+                  <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                Sign Out
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- ── Memory Tab ── -->
+        <div class="settings-panel hidden" data-panel="memory" role="tabpanel">
+          {% if has_memory %}
+          <div class="settings-group">
+            <p class="settings-description">
+              Durable preferences, cloud environments, and constraints automatically
+              learned from your conversations to personalize future answers.
+              Bounded to &le;300 tokens and applied across all your sessions.
+            </p>
+          </div>
+          <div class="settings-group">
+            <div class="settings-field-row settings-field-row--space-between">
+              <span class="settings-label">Remembered Preferences</span>
+              <button type="button" id="settings-clear-all-memory-btn"
+                      class="settings-action-btn settings-action-btn--danger-outline">
+                Clear All
+              </button>
+            </div>
+            <!-- Inline confirm (hidden until Clear All clicked) -->
+            <div id="settings-clear-memory-confirm" class="settings-confirm-inline hidden">
+              <span>Delete all memories? This cannot be undone.</span>
+              <button type="button" id="settings-clear-memory-yes"
+                      class="settings-action-btn settings-action-btn--danger">Yes, Delete</button>
+              <button type="button" id="settings-clear-memory-no"
+                      class="settings-action-btn settings-action-btn--ghost">Cancel</button>
+            </div>
+          </div>
+          <div id="settings-memory-loading" class="memory-status-text">Loading…</div>
+          <div id="settings-memory-empty" class="memory-status-text hidden">
+            No preferences remembered yet. As you chat, CloudGPT will remember
+            your primary cloud, preferred regions, and IaC tooling.
+          </div>
+          <div id="settings-memory-items" class="memory-items-list"></div>
+          {% else %}
+          <div class="settings-group">
+            <div class="settings-tier-lock">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                   stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              <div>
+                <strong>Memory is a Pro+ feature</strong>
+                <p>Upgrade to Pro or Max to unlock cross-session preferences
+                   and personalized responses.</p>
+                <a href="/billing" class="settings-upgrade-link">Upgrade Plan →</a>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- ── Preferences Tab ── -->
+        <div class="settings-panel hidden" data-panel="preferences" role="tabpanel">
+
+          <!-- Response Language -->
+          <div class="settings-group">
+            <label class="settings-label" for="pref-language">Response Language</label>
+            <select id="pref-language" class="settings-select"
+                    data-pref-key="response_language"
+                    aria-label="Default response language">
+              <option value="auto">Auto-detect</option>
+              <option value="en">English</option>
+              <option value="ar">Arabic</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="hi">Hindi</option>
+              <option value="ja">Japanese</option>
+              <option value="pt">Portuguese</option>
+              <option value="es">Spanish</option>
+              <option value="zh">Chinese (Simplified)</option>
+            </select>
+            <span class="settings-hint">Applies to the next conversation you start.</span>
+          </div>
+
+          <!-- Default Thinking Level -->
+          <div class="settings-group">
+            <label class="settings-label" for="pref-thinking">Default Thinking Level</label>
+            <select id="pref-thinking" class="settings-select"
+                    data-pref-key="default_thinking"
+                    aria-label="Default thinking level">
+              <option value="auto">Auto (recommended)</option>
+              <option value="Low">Low — Fastest</option>
+              <option value="Medium">Medium — Balanced</option>
+              <option value="High">High — Thorough</option>
+              {% if allowed_thinking_levels and 'Max' in allowed_thinking_levels %}
+              <option value="Max">Max — Deepest Reasoning</option>
+              {% endif %}
+            </select>
+            <span class="settings-hint">Your tier's model access still applies.</span>
+          </div>
+
+          <!-- Toggle settings -->
+          <div class="settings-group">
+            <label class="settings-label">Interface</label>
+
+            <div class="settings-toggle-row" data-pref-key="show_thinking">
+              <div>
+                <span class="settings-toggle-title">Show Thinking Process</span>
+                <span class="settings-toggle-desc">Expand the reasoning panel by default</span>
+              </div>
+              <button type="button" class="settings-toggle" role="switch"
+                      aria-label="Toggle show thinking process" aria-checked="false">
+                <span class="settings-toggle-thumb"></span>
+              </button>
+            </div>
+
+            <div class="settings-toggle-row" data-pref-key="show_token_usage">
+              <div>
+                <span class="settings-toggle-title">Show Token Usage</span>
+                <span class="settings-toggle-desc">Daily & monthly usage in the sidebar</span>
+              </div>
+              <button type="button" class="settings-toggle" role="switch"
+                      aria-label="Toggle show token usage" aria-checked="true">
+                <span class="settings-toggle-thumb"></span>
+              </button>
+            </div>
+
+            <div class="settings-toggle-row" data-pref-key="show_pipeline_stages">
+              <div>
+                <span class="settings-toggle-title">Show Pipeline Stages</span>
+                <span class="settings-toggle-desc">Progress indicator while CloudGPT is thinking</span>
+              </div>
+              <button type="button" class="settings-toggle" role="switch"
+                      aria-label="Toggle show pipeline stages" aria-checked="true">
+                <span class="settings-toggle-thumb"></span>
+              </button>
+            </div>
+
+            <div class="settings-toggle-row" data-pref-key="compact_messages">
+              <div>
+                <span class="settings-toggle-title">Compact Message View</span>
+                <span class="settings-toggle-desc">Reduce spacing between messages</span>
+              </div>
+              <button type="button" class="settings-toggle" role="switch"
+                      aria-label="Toggle compact messages" aria-checked="false">
+                <span class="settings-toggle-thumb"></span>
+              </button>
+            </div>
+
+            <!-- Web Search toggle: Pro+ only -->
+            <div class="settings-toggle-row {% if user_tier and user_tier|lower == 'lite' %}settings-toggle-row--locked{% endif %}"
+                 data-pref-key="always_web_search">
+              <div>
+                <span class="settings-toggle-title">Always Use Web Search
+                  {% if user_tier and user_tier|lower == 'lite' %}
+                  <span class="settings-tier-badge">Pro+</span>
+                  {% endif %}
+                </span>
+                <span class="settings-toggle-desc">Force live internet search on every query</span>
+              </div>
+              <button type="button" class="settings-toggle"
+                      role="switch" aria-label="Toggle always web search"
+                      aria-checked="false"
+                      {% if user_tier and user_tier|lower == 'lite' %}disabled aria-disabled="true"{% endif %}>
+                <span class="settings-toggle-thumb"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Subscription Tab ── -->
+        <div class="settings-panel hidden" data-panel="subscription" role="tabpanel">
+          <div class="settings-group">
+            <div class="settings-sub-header">
+              <span class="settings-label">Current Plan</span>
+              <span class="tier-badge settings-plan-badge">{{ user_tier or 'Lite' }}</span>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <label class="settings-label">Usage This Billing Period</label>
+            <div class="settings-usage-rows" id="settings-usage-rows">
+              <div class="settings-usage-loading">Loading usage data…</div>
+            </div>
+          </div>
+
+          <div class="settings-group settings-sub-actions">
+            {% if user_tier and user_tier|lower not in ['max', 'developer'] and not is_unlimited %}
+            <a href="/billing" class="settings-action-btn settings-action-btn--primary"
+               id="settings-upgrade-btn">
+              Upgrade Plan
+            </a>
+            {% endif %}
+            <button type="button" id="settings-billing-portal-btn"
+                    class="settings-action-btn settings-action-btn--outline hidden">
+              Manage Billing
+            </button>
+          </div>
+
+          <div class="settings-group settings-plan-features">
+            <label class="settings-label">What's Included</label>
+            <ul class="settings-features-list" id="settings-features-list">
+              <!-- Populated by JS based on tier -->
+            </ul>
+          </div>
+        </div>
+
+        <!-- ── About & Shortcuts Tab ── -->
+        <div class="settings-panel hidden" data-panel="about" role="tabpanel">
+          <div class="settings-group">
+            <label class="settings-label">Keyboard Shortcuts</label>
+            <table class="settings-shortcuts-table" aria-label="Keyboard shortcuts">
+              <tbody>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Send message</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Toggle voice input</td></tr>
+                <tr><td><kbd>Escape</kbd></td><td>Cancel stream / Close panel</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>New conversation</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open settings</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="settings-group">
+            <label class="settings-label">Application</label>
+            <div class="settings-about-row">
+              <span class="settings-meta-label">CloudGPT</span>
+              <span class="settings-meta-value">Enterprise Multi-Cloud Research Assistant</span>
+            </div>
+            <div class="settings-about-row">
+              <span class="settings-meta-label">Coverage</span>
+              <span class="settings-meta-value">848 AWS / GCP / Azure services · 27 categories</span>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <label class="settings-label">Legal & Support</label>
+            <div class="settings-links-row">
+              <a href="/privacy" class="settings-text-link" target="_blank">Privacy Policy</a>
+              <a href="/terms" class="settings-text-link" target="_blank">Terms of Service</a>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /.modal-body -->
+    </div><!-- /.modal-card -->
+  </div><!-- /#settings-modal -->
+
+  <script src="/static/js/chat-attachments.js"></script>
+  <script src="/static/js/chat-actions.js"></script>
+  <script src="/static/js/chat.js"></script>
+</body>
+</html>

@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verify Email | CloudGPT — Multi-Cloud AI Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset & Core Theme Tokens ── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-base: #000000;
+      --bg-surface: #0c0c0e;
+      --bg-subsurface: #141418;
+      --bg-hover: #1c1c22;
+      --border-subtle: #222226;
+      --border-strong: #333338;
+      --border-focus: #ffffff;
+      --text-white: #ffffff;
+      --text-primary: #f4f4f5;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+    }
+
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-base);
+      background-image: radial-gradient(850px circle at 50% 12%, rgba(255, 255, 255, 0.038), transparent 65%);
+      color: var(--text-primary);
+      position: relative;
+      overflow-x: hidden;
+      padding: 2.5rem 1.25rem;
+    }
+
+    /* ── Brand Header (Strictly Typographic - No Graphic Logo) ── */
+    .top-header {
+      position: absolute;
+      top: 24px;
+      left: 28px;
+      z-index: 10;
+    }
+
+    .brand {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--text-white);
+      text-decoration: none;
+      transition: opacity 0.15s ease;
+    }
+
+    .brand:hover {
+      opacity: 0.85;
+    }
+
+    /* ── Center Card Container (Pre-AI Era Clean Obsidian) ── */
+    .card {
+      position: relative;
+      z-index: 1;
+      width: min(100%, 450px);
+      padding: 42px 38px;
+      border-radius: 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.02);
+      text-align: center;
+    }
+
+    /* ── Security Icon Badge ── */
+    .icon-badge {
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 22px;
+      border-radius: 14px;
+      background: var(--bg-subsurface);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-white);
+    }
+
+    /* ── Typography ── */
+    h1 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      color: var(--text-white);
+    }
+
+    .subtitle {
+      margin: 0 0 26px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .email-tag {
+      display: inline-block;
+      margin-top: 6px;
+      color: var(--text-white);
+      font-weight: 600;
+      word-break: break-all;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 3px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    /* ── Flash Messages ── */
+    .flash-message {
+      padding: 13px 16px;
+      border-radius: 9px;
+      margin-bottom: 22px;
+      font-size: 13.5px;
+      line-height: 1.45;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-align: left;
+    }
+
+    .flash-error {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+    }
+
+    .flash-success {
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      color: #86efac;
+    }
+
+    .flash-warning {
+      background: rgba(234, 179, 8, 0.12);
+      border: 1px solid rgba(234, 179, 8, 0.35);
+      color: #fde047;
+    }
+
+    .flash-icon {
+      flex-shrink: 0;
+      width: 17px;
+      height: 17px;
+    }
+
+    /* ── Form Controls ── */
+    .form-group {
+      margin-bottom: 18px;
+      text-align: left;
+    }
+
+    .field-label {
+      display: block;
+      margin: 0 0 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #e4e4e7;
+    }
+
+    .text-input {
+      width: 100%;
+      height: 48px;
+      padding: 11px 15px;
+      border: 1px solid #2e2e34;
+      border-radius: 10px;
+      font-size: 14.5px;
+      background: var(--bg-subsurface);
+      color: var(--text-white);
+      font-family: inherit;
+      transition: all 0.15s ease;
+    }
+
+    .text-input:focus {
+      outline: 2px solid var(--text-white);
+      border-color: var(--text-white);
+      background: #18181e;
+      box-shadow: 0 0 0 1px var(--text-white);
+    }
+
+    .code-input {
+      width: 100%;
+      height: 56px;
+      padding: 0 16px;
+      border: 1px solid #2e2e34;
+      border-radius: 10px;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 16px;
+      text-align: center;
+      background: var(--bg-subsurface);
+      color: var(--text-white);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      transition: all 0.15s ease;
+    }
+
+    .code-input:focus {
+      outline: 2px solid var(--text-white);
+      border-color: var(--text-white);
+      background: #18181e;
+      box-shadow: 0 0 0 1px var(--text-white);
+    }
+
+    .code-input::placeholder {
+      font-size: 18px;
+      letter-spacing: 10px;
+      font-weight: 400;
+      color: #52525b;
+    }
+
+    .input-error {
+      border-color: #ef4444 !important;
+    }
+
+    .input-error:focus {
+      outline: 2px solid #ef4444 !important;
+      box-shadow: 0 0 0 1px #ef4444 !important;
+    }
+
+    /* ── Action Buttons ── */
+    .primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 48px;
+      border-radius: 10px;
+      font-size: 14.5px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      border: 0;
+      color: #000000;
+      background: #ffffff;
+      transition: background 0.18s ease, opacity 0.18s ease;
+      margin-top: 8px;
+    }
+
+    .primary:hover {
+      background: #e5e5e5;
+    }
+
+    .primary:focus-visible {
+      outline: 2px solid #ffffff;
+      outline-offset: 2px;
+    }
+
+    .primary:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    /* ── Resend Row ── */
+    .resend-row {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 13.5px;
+      color: var(--text-secondary);
+    }
+
+    .resend-btn {
+      background: none;
+      border: none;
+      color: var(--text-white);
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 2px 4px;
+      transition: opacity 0.15s ease;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .resend-btn:hover:not(:disabled) {
+      opacity: 0.8;
+    }
+
+    .resend-btn:disabled {
+      color: var(--text-muted);
+      cursor: not-allowed;
+      text-decoration: none;
+    }
+
+    /* ── Sellable Enterprise Reassurance ── */
+    .enterprise-reassurance {
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .enterprise-reassurance svg {
+      flex-shrink: 0;
+      color: var(--text-secondary);
+    }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    a {
+      color: var(--text-white);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      font-weight: 500;
+    }
+
+    a:hover {
+      color: #e5e5e5;
+    }
+
+    /* ── Bottom Enterprise Trust Bar ── */
+    .bottom-trust-bar {
+      margin-top: 2rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 14px 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      z-index: 1;
+    }
+
+    .trust-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .trust-sep {
+      color: #333338;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Brand Header (Strict Typographic Wordmark) -->
+  <header class="top-header">
+    <a href="/" class="brand">CloudGPT</a>
+  </header>
+
+  <!-- Verification Card -->
+  <main class="card">
+    <div class="icon-badge" aria-hidden="true">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+        <polyline points="22,6 12,13 2,6"></polyline>
+      </svg>
+    </div>
+
+    <h1>Verify your Email</h1>
+
+    {% if email %}
+    <p class="subtitle">
+      We've sent a 6-digit verification code to<br />
+      <span class="email-tag">{{ email }}</span>
+    </p>
+    {% else %}
+    <p class="subtitle">
+      Enter your account email and the 6-digit verification code sent to your inbox.
+    </p>
+    {% endif %}
+
+    <!-- Flash Messages -->
+    {% if error %}
+    <div class="flash-message flash-error" role="alert">
+      <svg class="flash-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <span>{{ error }}</span>
+    </div>
+    {% endif %}
+
+    {% if success %}
+    <div class="flash-message flash-success" role="status">
+      <svg class="flash-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+      </svg>
+      <span>{{ success }}</span>
+    </div>
+    {% endif %}
+
+    {% if warning %}
+    <div class="flash-message flash-warning" role="alert">
+      <svg class="flash-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <span>{{ warning }}</span>
+    </div>
+    {% endif %}
+
+    <!-- Verification Form -->
+    <form id="verify-form" method="post" action="/verify-email">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+      {% if email %}
+      <input type="hidden" name="email" value="{{ email }}" />
+      {% else %}
+      <div class="form-group">
+        <label for="email" class="field-label">Account Email Address</label>
+        <input id="email" name="email" type="email" required autocomplete="email" placeholder="name@company.com" class="text-input" />
+      </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label for="code" class="field-label">6-Digit Verification Code</label>
+        <input id="code" name="code" type="text" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="••••••" required autocomplete="one-time-code" autofocus class="code-input {% if error %}input-error{% endif %}" />
+      </div>
+
+      <button class="primary" type="submit" id="verify-submit-btn">Verify & Continue</button>
+    </form>
+
+    <!-- Resend Code Row with Live Countdown -->
+    <div class="resend-row">
+      <span>Didn't receive code?</span>
+      <form id="resend-form" method="post" action="/resend-verification" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="hidden" name="email" value="{{ email }}" />
+        <button type="submit" class="resend-btn" id="resend-btn">Resend</button>
+      </form>
+    </div>
+
+    <div class="enterprise-reassurance">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span>Enterprise Multi-Tenant Isolation • Single-Use Code</span>
+    </div>
+
+    <!-- Footer Navigation -->
+    <p class="footer">
+      Wrong email? <a href="/signup">Change email</a> · <a href="/">Sign in</a>
+    </p>
+  </main>
+
+  <!-- Bottom Enterprise Trust Bar -->
+  <aside class="bottom-trust-bar" aria-label="Security Reassurance">
+    <div class="trust-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+      <span>Zero-Data Retention</span>
+    </div>
+    <span class="trust-sep">•</span>
+    <div class="trust-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      <span>848+ Verified Cloud Services</span>
+    </div>
+    <span class="trust-sep">•</span>
+    <div class="trust-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <span>SOC-2 Type II Certified Access</span>
+    </div>
+  </aside>
+
+  <script>
+    const codeInput = document.getElementById('code');
+    const verifyForm = document.getElementById('verify-form');
+    const verifyBtn = document.getElementById('verify-submit-btn');
+
+    if (codeInput) {
+      codeInput.addEventListener('input', function () {
+        this.value = this.value.replace(/[^0-9]/g, '').slice(0, 6);
+        this.classList.remove('input-error');
+        if (this.value.length === 6 && verifyBtn) {
+          verifyBtn.focus();
+        }
+      });
+
+      codeInput.addEventListener('paste', function (e) {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text');
+        const digits = text.replace(/[^0-9]/g, '').slice(0, 6);
+        this.value = digits;
+        if (digits.length === 6 && verifyBtn) {
+          verifyBtn.focus();
+        }
+      });
+    }
+
+    if (verifyForm && verifyBtn) {
+      verifyForm.addEventListener('submit', function () {
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = 'Verifying…';
+      });
+    }
+
+    // Smart Resend Cooldown Countdown
+    const resendBtn = document.getElementById('resend-btn');
+    const resendForm = document.getElementById('resend-form');
+
+    function startCooldown(seconds) {
+      if (!resendBtn) return;
+      resendBtn.disabled = true;
+      let remaining = seconds;
+      
+      const interval = setInterval(function () {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(interval);
+          sessionStorage.removeItem('cloudgpt_resend_cooldown');
+          resendBtn.disabled = false;
+          resendBtn.textContent = 'Resend';
+        } else {
+          sessionStorage.setItem('cloudgpt_resend_cooldown', Date.now() + (remaining * 1000));
+          resendBtn.textContent = 'Resend in ' + remaining + 's';
+        }
+      }, 1000);
+    }
+
+    const savedCooldown = sessionStorage.getItem('cloudgpt_resend_cooldown');
+    if (savedCooldown) {
+      const remainingMs = parseInt(savedCooldown, 10) - Date.now();
+      if (remainingMs > 0) {
+        startCooldown(Math.ceil(remainingMs / 1000));
+      } else {
+        sessionStorage.removeItem('cloudgpt_resend_cooldown');
+      }
+    }
+
+    if (resendForm && resendBtn) {
+      resendForm.addEventListener('submit', function () {
+        resendBtn.disabled = true;
+        resendBtn.textContent = 'Sending…';
+        sessionStorage.setItem('cloudgpt_resend_cooldown', Date.now() + (60 * 1000));
+      });
+    }
+  </script>
+
+</body>
+
+</html>

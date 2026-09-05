@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudGPT — Multi-Cloud AI Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-base: #000000;
+      --bg-surface: #0c0c0e;
+      --bg-subsurface: #141418;
+      --bg-hover: #1c1c22;
+      --border-subtle: #222226;
+      --border-strong: #333338;
+      --border-focus: #ffffff;
+
+      --text-white: #ffffff;
+      --text-primary: #f4f4f5;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+
+      --accent-white: #ffffff;
+      --accent-black: #000000;
+    }
+
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── Top Navigation Bar ── */
+    .top-nav {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 24px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+      color: var(--text-white);
+    }
+
+    .brand-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--text-white);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .nav-link {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.15s ease;
+    }
+
+    .nav-link:hover {
+      color: var(--text-white);
+    }
+
+    .nav-btn {
+      color: #000000;
+      background: #ffffff;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.15s ease;
+    }
+
+    .nav-btn:hover {
+      background: #e5e5e5;
+    }
+
+    /* ── Main Hero & Content Flow ── */
+    .page-main {
+      flex: 1;
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Header Value Proposition (Editorial "Before AI Style") ── */
+    .hero-editorial {
+      text-align: center;
+      max-width: 820px;
+      margin-bottom: 3.5rem;
+    }
+
+    .eyebrow-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 1.25rem;
+    }
+
+    .eyebrow-badge .bullet-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ffffff;
+    }
+
+    .hero-heading {
+      font-size: clamp(2.25rem, 4.5vw, 3.4rem);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      line-height: 1.15;
+      color: var(--text-white);
+      margin-bottom: 1.2rem;
+    }
+
+    .hero-description {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      line-height: 1.65;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    /* ── High-End Obsidian Capabilities Grid ── */
+    .capabilities-grid {
+      width: 100%;
+      max-width: 1100px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 3.5rem;
+    }
+
+    @media (max-width: 990px) {
+      .capabilities-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+      }
+    }
+
+    @media (max-width: 580px) {
+      .capabilities-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+    }
+
+    .cap-card {
+      background: linear-gradient(180deg, #101014 0%, #08080b 100%);
+      border: 1px solid #202026;
+      border-radius: 14px;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      text-align: left;
+      position: relative;
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    .cap-card:hover {
+      transform: translateY(-3px);
+      border-color: #383844;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.7);
+    }
+
+    .cap-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .cap-index {
+      font-size: 11px;
+      font-weight: 700;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #8e8e96;
+      background: #16161c;
+      border: 1px solid #282832;
+      padding: 3px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.05em;
+    }
+
+    .cap-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: #16161c;
+      border: 1px solid #282832;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .cap-card:hover .cap-icon {
+      border-color: #ffffff;
+      background: #202028;
+    }
+
+    .cap-tag {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: #8e8e98;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .cap-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      line-height: 1.35;
+    }
+
+    .cap-desc {
+      font-size: 13px;
+      color: #a1a1aa;
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    /* ── Centered Sign In Card (The Authentic Previous UI) ── */
+    .card {
+      width: 100%;
+      max-width: 440px;
+      padding: 38px 34px;
+      border-radius: 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75);
+    }
+
+    .card h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text-white);
+      text-align: center;
+    }
+
+    .subtitle {
+      margin: 0 0 24px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.45;
+      text-align: center;
+    }
+
+    /* ── Flash Messages ── */
+    .flash-message {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13.5px;
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .flash-error {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+    }
+
+    .flash-success {
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    .flash-warning {
+      background: rgba(234, 179, 8, 0.15);
+      border: 1px solid rgba(234, 179, 8, 0.3);
+      color: #fde047;
+    }
+
+    .google-error-msg {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: #ef4444;
+      line-height: 1.3;
+      text-align: left;
+    }
+
+    .google-error-icon {
+      flex-shrink: 0;
+      width: 14px;
+      height: 14px;
+      fill: currentColor;
+    }
+
+    .input-error {
+      border-color: #ef4444 !important;
+    }
+
+    .input-error:focus {
+      outline: 2px solid #ef4444 !important;
+    }
+
+    /* ── Form Controls ── */
+    .field-label {
+      display: block;
+      margin: 0 0 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border-subtle);
+      border-radius: 9px;
+      font-size: 14.5px;
+      background: var(--bg-subsurface);
+      color: var(--text-white);
+      font-family: inherit;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 1px #ffffff;
+    }
+
+    input::placeholder {
+      color: var(--text-muted);
+    }
+
+    /* ── Action Buttons (High Contrast Monochrome) ── */
+    .primary, .social {
+      width: 100%;
+      min-height: 46px;
+      border-radius: 9px;
+      font-size: 14.5px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.18s ease;
+    }
+
+    .primary {
+      margin-top: 20px;
+      border: 0;
+      color: #000000;
+      background: #ffffff;
+    }
+
+    .primary:hover {
+      background: #e5e5e5;
+    }
+
+    .primary:focus-visible {
+      outline: 2px solid #ffffff;
+      outline-offset: 2px;
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 22px 0;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border-subtle);
+    }
+
+    .social {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin: 8px 0;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-subsurface);
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .social:hover {
+      background: var(--bg-hover);
+      border-color: var(--border-strong);
+    }
+
+    .social:focus-visible {
+      outline: 2px solid #ffffff;
+      outline-offset: 2px;
+    }
+
+    .social.loading {
+      opacity: 0.6;
+      pointer-events: none;
+      cursor: wait;
+    }
+
+    .social-icon {
+      width: 18px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .social-icon svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .footer {
+      margin: 22px 0 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13.5px;
+    }
+
+    a {
+      color: #ffffff;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      font-weight: 500;
+    }
+
+    a:hover {
+      color: #e5e5e5;
+    }
+
+    /* ── Global Footer ── */
+    .site-footer {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 16px;
+    }
+
+    .footer-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+    }
+
+    .footer-links a:hover {
+      color: var(--text-white);
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Top Navigation -->
+  <header class="top-nav">
+    <a href="/" class="brand-link" aria-label="CloudGPT Home">
+      <span class="brand-title">CloudGPT</span>
+    </a>
+    <nav class="nav-actions">
+      <a href="/pricing" class="nav-link">Pricing</a>
+      <a href="/signup" class="nav-btn">Sign Up</a>
+    </nav>
+  </header>
+
+  <main class="page-main">
+    <!-- Editorial Value Proposition (Before AI Style) -->
+    <section class="hero-editorial">
+      <h1 class="hero-heading">
+        The Multi-Cloud AI Assistant
+      </h1>
+
+      <p class="hero-description">
+        Engineered for Enterprise Architects, Staff Engineers, and Infrastructure Leads. Design Cross-Cloud Topologies across AWS, GCP, and Azure, Eliminate Multimillion-Dollar Overspend, and Validate Production-Ready Systems in Seconds.
+      </p>
+    </section>
+
+    <!-- High-End Obsidian Capabilities Grid -->
+    <section class="capabilities-grid" aria-label="Core Engineering Capabilities">
+      <div class="cap-card">
+        <div class="cap-card-header">
+          <span class="cap-index">01</span>
+          <div class="cap-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+            </svg>
+          </div>
+        </div>
+        <span class="cap-tag">TOPOLOGY MATRIX</span>
+        <h2 class="cap-title">Cross-Cloud Parity Engine</h2>
+        <p class="cap-desc">Map and Translate Architectural Topologies across AWS, GCP, and Azure with Verified Cross-Provider Blueprints.</p>
+      </div>
+
+      <div class="cap-card">
+        <div class="cap-card-header">
+          <span class="cap-index">02</span>
+          <div class="cap-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <polyline points="9 12 11 14 15 10"></polyline>
+            </svg>
+          </div>
+        </div>
+        <span class="cap-tag">VERIFICATION</span>
+        <h2 class="cap-title">Authoritative Knowledge Matrix</h2>
+        <p class="cap-desc">Continuously Verified against Official Enterprise Cloud Specifications, Compliance Baselines, and Battle-Tested Frameworks.</p>
+      </div>
+
+      <div class="cap-card">
+        <div class="cap-card-header">
+          <span class="cap-index">03</span>
+          <div class="cap-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+              <polyline points="2 17 12 22 22 17"></polyline>
+              <polyline points="2 12 12 17 22 12"></polyline>
+            </svg>
+          </div>
+        </div>
+        <span class="cap-tag">REASONING</span>
+        <h2 class="cap-title">Deep Multi-Stage Analysis</h2>
+        <p class="cap-desc">Autonomous Multi-Stage Analysis for Complex Workload Migrations, Multi-Region Failovers, and Security Posture Hardening.</p>
+      </div>
+
+      <div class="cap-card">
+        <div class="cap-card-header">
+          <span class="cap-index">04</span>
+          <div class="cap-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="1" x2="12" y2="23"></line>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+          </div>
+        </div>
+        <span class="cap-tag">ECONOMICS</span>
+        <h2 class="cap-title">Live Cost Arbitrage</h2>
+        <p class="cap-desc">Real-Time SKU Pricing Intelligence, Cross-Provider Compute Arbitrage, and Predictive Cost Modeling that Eliminates Overspending.</p>
+      </div>
+    </section>
+
+    <!-- Centered Sign In Card (Authentic Previous UI) -->
+    <section class="card" aria-labelledby="signin-heading">
+      <h1 id="signin-heading">Sign in</h1>
+      <p class="subtitle">Enter your Email Address or Continue with Google</p>
+
+      <!-- Flash Messages -->
+      {% if error %}
+      <div class="flash-message flash-error" role="alert">
+        <svg class="google-error-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+        </svg>
+        <span>{{ error }}</span>
+      </div>
+      {% endif %}
+      {% if success %}
+      <div class="flash-message flash-success">{{ success }}</div>
+      {% endif %}
+      {% if warning %}
+      <div class="flash-message flash-warning">{{ warning }}</div>
+      {% endif %}
+
+      <!-- Email Form (Exact matching contract for auth tests) -->
+      <form id="email-form" action="/login-email" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label for="email" class="field-label">Email Address</label>
+        <input id="email" name="email" type="email" required placeholder="Enter your Email Address" autocomplete="email" value="{{ email or '' }}" class="{% if error %}input-error{% endif %}" />
+        {% if error %}
+        <div class="google-error-msg">
+          <svg class="google-error-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+          </svg>
+          <span>{{ error }}</span>
+        </div>
+        {% endif %}
+        <button class="primary" type="submit">Sign in</button>
+      </form>
+
+      <!-- Divider -->
+      <div class="divider">OR</div>
+
+      <!-- Google Sign-In -->
+      <a id="google-btn" class="social" href="/auth/google" role="button" aria-label="Continue with Google">
+        <span class="social-icon" aria-hidden="true">
+          <svg viewBox="0 0 48 48" role="img" aria-label="Google logo">
+            <path fill="#EA4335"
+              d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.13 13.72 17.56 9.5 24 9.5z" />
+            <path fill="#4285F4"
+              d="M46.5 24c0-1.54-.14-3.02-.39-4.45H24v8.43h12.44c-.54 2.8-2.12 5.16-4.5 6.74l7.04 5.46C43.98 37.07 46.5 31.02 46.5 24z" />
+            <path fill="#FBBC05"
+              d="M10.54 27.86A14.5 14.5 0 0 1 10.54 20.14l-7.98-6.19A24 24 0 0 0 0 24c0 3.9.93 7.59 2.56 10.78l7.98-6.92z" />
+            <path fill="#34A853"
+              d="M24 47.5c6.48 0 11.92-2.14 15.9-5.8l-7.04-5.46c-2.01 1.35-4.58 2.15-8.86 2.15-6.44 0-11.87-4.22-13.86-9.92l-7.98 6.92C6.51 42.62 14.62 47.5 24 47.5z" />
+          </svg>
+        </span>
+        <span>Continue with Google</span>
+      </a>
+
+      <!-- Footer -->
+      <p class="footer">New here? <a href="/signup">Create an account</a></p>
+    </section>
+  </main>
+
+  <!-- Global Site Footer -->
+  <footer class="site-footer">
+    <span>© 2026 CloudGPT. All rights reserved.</span>
+    <nav class="footer-links">
+      <a href="/pricing">Pricing</a>
+      <a href="/terms">Terms & Conditions</a>
+      <a href="/privacy">Privacy</a>
+    </nav>
+  </footer>
+
+  <!-- Loading state for Google button -->
+  <script>
+    const googleBtn = document.getElementById('google-btn');
+    if (googleBtn) {
+      googleBtn.addEventListener('click', function () {
+        this.classList.add('loading');
+        this.querySelector('span:last-child').textContent = 'Redirecting…';
+      });
+    }
+  </script>
+
+</body>
+</html>

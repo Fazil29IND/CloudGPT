@@ -1,0 +1,12 @@
+{
+    "k1": 1.5,
+    "b": 0.75,
+    "delta": 0.5,
+    "method": "robertson",
+    "idf_method": "robertson",
+    "dtype": "float32",
+    "int_dtype": "int32",
+    "num_docs": 1052,
+    "version": "0.3.11",
+    "backend": "numpy"
+}

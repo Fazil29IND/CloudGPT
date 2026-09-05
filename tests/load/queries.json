@@ -1,0 +1,14 @@
+[
+  {"query": "What is AWS S3 default encryption algorithm?", "provider_filter": "aws", "category": "exact_fact"},
+  {"query": "How to create a GKE cluster with gcloud?", "provider_filter": "gcp", "category": "exact_fact"},
+  {"query": "What port does Azure Bastion connect through?", "provider_filter": "azure", "category": "exact_fact"},
+  {"query": "Compare AWS Lambda vs Google Cloud Functions vs Azure Functions", "provider_filter": null, "category": "comparison"},
+  {"query": "Compare AWS S3 vs Azure Blob Storage vs Google Cloud Storage pricing", "provider_filter": null, "category": "comparison"},
+  {"query": "Compare Amazon EKS vs Azure AKS vs Google GKE", "provider_filter": null, "category": "comparison"},
+  {"query": "How to troubleshoot Kubernetes Pod CrashLoopBackOff in EKS?", "provider_filter": "aws", "category": "troubleshooting"},
+  {"query": "How to fix AWS S3 403 Forbidden AccessDenied error?", "provider_filter": "aws", "category": "troubleshooting"},
+  {"query": "Troubleshoot Azure VM connection timeout on port 22", "provider_filter": "azure", "category": "troubleshooting"},
+  {"query": "Terraform configuration for AWS S3 bucket with server-side encryption", "provider_filter": "aws", "category": "iac"},
+  {"query": "Bicep template for Azure Key Vault with RBAC authorization", "provider_filter": "azure", "category": "iac"},
+  {"query": "Terraform module for Google Cloud Storage bucket with CMEK", "provider_filter": "gcp", "category": "iac"}
+]

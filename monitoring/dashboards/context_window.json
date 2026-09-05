@@ -1,0 +1,126 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 102,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "Prompt Tokens Assembled by Section (p95)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(cloudgpt_prompt_section_tokens_bucket[5m])) by (le, section))",
+          "legendFormat": "{{section}} (p95 tokens)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "title": "Total Prompt Size by Tier (p50 & p95)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(cloudgpt_prompt_total_tokens_bucket[5m])) by (le, tier))",
+          "legendFormat": "{{tier}} p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(cloudgpt_prompt_total_tokens_bucket[5m])) by (le, tier))",
+          "legendFormat": "{{tier}} p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "title": "Budget Drops by Reason (Budget Cap vs Duplicate URL)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(cloudgpt_prompt_budget_drops_total[5m])) by (section, reason)",
+          "legendFormat": "{{section}} - {{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "title": "Prompt Overflows Total",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(cloudgpt_prompt_overflow_total[5m])) by (tier, section)",
+          "legendFormat": "{{tier}} - {{section}} overflow"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        }
+      }
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["cloudgpt", "context", "llm", "tokens"],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m"]
+  },
+  "timezone": "browser",
+  "title": "CloudGPT — Context Window & Prompt Budgets",
+  "version": 1
+}

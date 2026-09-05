@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin · User {{ user.email }} | CloudGPT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #000000;
+      color: #ffffff;
+      padding: 32px 24px;
+    }
+
+    .container { max-width: 1000px; margin: 0 auto; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      font-size: 22px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+    }
+
+    h1 { font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em; }
+
+    .nav { display: flex; gap: 12px; align-items: center; }
+
+    .nav a {
+      color: #8e8e93;
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid #222226;
+      background: #0c0c0e;
+      transition: all 0.15s ease;
+    }
+
+    .nav a:hover { color: #ffffff; border-color: #333338; background: #141418; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: #0c0c0e;
+      border: 1px solid #222226;
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .card h2 {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #8e8e93;
+      margin-bottom: 14px;
+    }
+
+    .kv { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 13.5px; }
+    .kv dt { color: #8e8e93; }
+    .kv dd { color: #ffffff; word-break: break-all; }
+
+    .pill {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 700;
+      border: 1px solid #333338;
+      color: #ffffff;
+      background: #141418;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #0c0c0e;
+      border: 1px solid #222226;
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #1c1c20; }
+
+    th {
+      color: #8e8e93;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: #141418;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    label.field-label {
+      display: block;
+      margin: 0 0 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #ffffff;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    select, button.tier-btn {
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-family: inherit;
+    }
+
+    select {
+      border: 1px solid #222226;
+      background: #141418;
+      color: #ffffff;
+      margin-right: 8px;
+    }
+
+    select:focus {
+      outline: 2px solid #ffffff;
+      border-color: #ffffff;
+    }
+
+    button.tier-btn {
+      border: 1px solid #ffffff;
+      background: #ffffff;
+      color: #000000;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+
+    button.tier-btn:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <div class="topbar">
+      <a href="/admin/users" class="brand">
+        <span>CloudGPT Admin</span>
+      </a>
+      <nav class="nav">
+        <a href="/admin/users">← All users</a>
+        <a href="/admin/usage">Usage</a>
+      </nav>
+    </div>
+
+    <h1>{{ user.email }}</h1>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Profile</h2>
+        <dl class="kv">
+          <dt>User ID</dt><dd>{{ user.id }}</dd>
+          <dt>Name</dt><dd>{{ user.name or '—' }}</dd>
+          <dt>Tier</dt><dd><span class="pill">{{ user.tier }}</span></dd>
+          <dt>Role</dt><dd>{{ user.role }}{% if user.is_admin %} (admin ★){% endif %}</dd>
+          <dt>Email verified</dt><dd>{{ 'Yes' if user.email_verified else 'No' }}</dd>
+          <dt>Created</dt><dd>{{ user.created_at }}</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h2>Tier override</h2>
+        <form method="post" action="/admin/users/{{ user.id }}/tier">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <label class="field-label" for="tier">Subscription tier</label>
+          <select id="tier" name="tier">
+            <option value="Lite" {% if user.tier|lower == 'lite' %}selected{% endif %}>Lite</option>
+            <option value="Pro" {% if user.tier|lower == 'pro' %}selected{% endif %}>Pro</option>
+            <option value="Max" {% if user.tier|lower == 'max' %}selected{% endif %}>Max</option>
+            <option value="Free" {% if user.tier|lower == 'free' %}selected{% endif %}>Free</option>
+          </select>
+          <button class="tier-btn" type="submit">Apply</button>
+        </form>
+
+        <h2 style="margin-top:18px;">Token usage</h2>
+        <dl class="kv">
+          <dt>5 hours</dt><dd>{{ user.tokens_used_5h or 0 }}</dd>
+          <dt>Day</dt><dd>{{ user.tokens_used_day or 0 }}</dd>
+          <dt>Week</dt><dd>{{ user.tokens_used_week or 0 }}</dd>
+          <dt>Month</dt><dd>{{ user.tokens_used_month or 0 }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h2>Subscriptions</h2>
+      <table>
+        <thead>
+          <tr><th>Plan</th><th>Provider</th><th>Status</th><th>Period end</th><th>Created</th></tr>
+        </thead>
+        <tbody>
+          {% for s in subscriptions %}
+          <tr>
+            <td>{{ s.plan_key }}</td>
+            <td>{{ s.provider }}</td>
+            <td>{{ s.status }}</td>
+            <td>{{ s.current_period_end or '—' }}</td>
+            <td>{{ s.created_at }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">No subscriptions.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h2>Recent usage events</h2>
+      <table>
+        <thead>
+          <tr><th>When</th><th>Model</th><th>Plan</th><th>Input</th><th>Output</th><th>Total</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for e in usage_events %}
+          <tr>
+            <td>{{ e.created_at }}</td>
+            <td>{{ e.model }}</td>
+            <td>{{ e.plan_key }}</td>
+            <td>{{ e.input_tokens }}</td>
+            <td>{{ e.output_tokens }}</td>
+            <td>{{ e.total_tokens }}</td>
+            <td>{{ e.status }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7">No usage events.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Recent sessions</h2>
+      <table>
+        <thead>
+          <tr><th>Session</th><th>Messages</th><th>Started</th></tr>
+        </thead>
+        <tbody>
+          {% for s in sessions %}
+          <tr>
+            <td style="word-break: break-all;">{{ s.session_id }}</td>
+            <td>{{ s.message_count }}</td>
+            <td>{{ s.started_at }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3">No sessions.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</body>
+
+</html>

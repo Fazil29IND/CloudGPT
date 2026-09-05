@@ -1,0 +1,74 @@
+name: CloudGPT CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Lint & Pytest Suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pygpt_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio ruff
+
+      - name: Lint Codebase & Verify Docs
+        run: |
+          ruff check .
+          python tools/check_docs.py
+
+      - name: Run Schema Migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/pygpt_test
+        run: |
+          python migrate.py
+
+      - name: Run Pytest Test Suite
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/pygpt_test
+          REDIS_URL: redis://localhost:6379/0
+          REDIS_ENABLED: "true"
+          SECRET_KEY: "ci-testing-secret-key-123456789"
+          ENVIRONMENT: "development"
+          SEED_DEMO_ACCOUNTS: "false"
+        run: |
+          pytest -v

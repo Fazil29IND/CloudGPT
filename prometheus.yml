@@ -1,0 +1,28 @@
+# CloudGPT — Prometheus scrape configuration.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: "cloudgpt"
+
+scrape_configs:
+  # The FastAPI app exposes /metrics via prometheus-fastapi-instrumentator.
+  # Scrape target stays internal to the compose network.
+  - job_name: "cloudgpt-app"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["cloudgpt_app:5001"]
+        labels:
+          service: "cloudgpt-api"
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "loki"
+    static_configs:
+      - targets: ["cloudgpt_loki:3100"]
+
+  - job_name: "promtail"
+    static_configs:
+      - targets: ["cloudgpt_promtail:9080"]

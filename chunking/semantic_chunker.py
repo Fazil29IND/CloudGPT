@@ -1,0 +1,491 @@
+"""
+Semantic Document Chunker for CloudGPT.
+
+Splits cloud documentation into semantically meaningful parent-child chunks
+preserving heading hierarchy, code blocks, tables, and technical context.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import re
+from dataclasses import dataclass, field
+from typing import Optional
+
+import tiktoken
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+
+class DocumentChunk(BaseModel):
+    """A single semantically meaningful chunk of documentation."""
+
+    chunk_id: str
+    text: str
+    provider: str
+    category: str
+    service: str
+    document_type: str = "documentation"
+    title: str = ""
+    section: str = ""
+    subsection: str = ""
+    url: str = ""
+    source: str = ""
+    language: str = "en"
+    region: str = "global"
+    first_crawled: str = ""
+    last_crawled: str = ""
+    last_modified: str | None = None
+    content_hash: str = ""
+    heading_breadcrumb: str = ""
+    char_count: int = 0
+    token_count: int = 0
+    service_status: str = "active"
+    parent_chunk_id: Optional[str] = None
+    child_index: int = 0
+    parser_version: str = "html-md-v2"
+    chunker_version: str = "parent-child-v1"
+
+
+@dataclass
+class _HeadingNode:
+    """Internal representation of a heading-based document section."""
+
+    level: int
+    title: str
+    content_lines: list[str] = field(default_factory=list)
+    children: list[_HeadingNode] = field(default_factory=list)
+
+
+class SemanticChunker:
+    """Heading-aware and token-budgeted parent-child chunker for cloud documentation.
+
+    Strategy:
+        1. Parse document into heading sections (H1 -> H2 -> H3 -> H4).
+        2. Create Parent Chunks (approx 1200 tokens) representing complete sub-topics.
+        3. Split each Parent Chunk into Child Chunks (approx 450 tokens with 50-token overlap),
+           respecting code block and table boundaries.
+        4. Maintain linkage via `parent_chunk_id` and `child_index`.
+    """
+
+    def __init__(
+        self,
+        max_chunk_chars: int = 1800,
+        min_chunk_chars: int = 200,
+        overlap_chars: int = 200,
+        tokenizer: str = "cl100k_base",
+        parent_token_budget: int = 1200,
+        child_token_budget: int = 450,
+        child_token_overlap: int = 50,
+    ) -> None:
+        self.max_chunk_chars = max_chunk_chars
+        self.min_chunk_chars = min_chunk_chars
+        self.overlap_chars = overlap_chars
+        self.parent_token_budget = parent_token_budget
+        self.child_token_budget = child_token_budget
+        self.child_token_overlap = child_token_overlap
+
+        try:
+            self._tokenizer = tiktoken.get_encoding(tokenizer)
+        except Exception:
+            logger.warning("Could not initialize tiktoken tokenizer '%s', using fallback", tokenizer)
+            self._tokenizer = None
+
+    def _count_tokens(self, text: str) -> int:
+        if not text:
+            return 0
+        if self._tokenizer:
+            return len(self._tokenizer.encode(text))
+        return max(1, len(text) // 4)
+
+    # ── Parent-Child Chunking API ───────────────────────────────────────
+
+    def chunk_document_with_parents(
+        self,
+        content: str,
+        provider: str = "",
+        category: str = "",
+        service: str = "",
+        url: str = "",
+        source: str = "",
+        document_type: str = "documentation",
+        title: str = "",
+        last_crawled: str = "",
+        service_status: str = "active",
+    ) -> list[tuple[DocumentChunk, list[DocumentChunk]]]:
+        """Split document into (ParentChunk, [ChildChunk, ...]) pairs.
+
+        Returns:
+            List of tuples where each tuple is (parent_chunk, list_of_child_chunks).
+        """
+        if not content or not content.strip():
+            return []
+
+        sections = self._parse_headings(content)
+        pairs: list[tuple[DocumentChunk, list[DocumentChunk]]] = []
+
+        for p_idx, (breadcrumb, sec_text, _lvl) in enumerate(sections):
+            if not sec_text.strip():
+                continue
+
+            parts = [p.strip() for p in breadcrumb.split(" > ") if p.strip()]
+            section = parts[1] if len(parts) > 1 else ""
+            subsection = parts[2] if len(parts) > 2 else ""
+            chunk_title = parts[0] if parts else title
+
+            # Ensure parent is within parent_token_budget
+            parent_text = sec_text
+            if breadcrumb and not sec_text.startswith("# "):
+                parent_text = f"[{breadcrumb}]\n\n{sec_text}"
+
+            parent_id = self._generate_chunk_id(provider, service, section or "main", p_idx) + "-parent"
+            parent_hash = hashlib.sha256(parent_text.encode("utf-8")).hexdigest()
+
+            parent_chunk = DocumentChunk(
+                chunk_id=parent_id,
+                text=parent_text,
+                provider=provider,
+                category=category,
+                service=service,
+                document_type=document_type,
+                title=chunk_title or title,
+                section=section,
+                subsection=subsection,
+                url=url,
+                source=source,
+                language="en",
+                region="global",
+                first_crawled=last_crawled,
+                last_crawled=last_crawled,
+                content_hash=parent_hash,
+                heading_breadcrumb=breadcrumb,
+                char_count=len(parent_text),
+                token_count=self._count_tokens(parent_text),
+                service_status=service_status,
+                parent_chunk_id=None,
+                child_index=0,
+                parser_version="html-md-v2",
+                chunker_version="parent-child-v1",
+            )
+
+            # Generate child chunks
+            child_texts = self._split_into_token_chunks(
+                sec_text,
+                target_tokens=self.child_token_budget,
+                overlap_tokens=self.child_token_overlap,
+            )
+
+            children: list[DocumentChunk] = []
+            for c_idx, c_text in enumerate(child_texts):
+                if not c_text.strip():
+                    continue
+
+                child_contextualized = c_text
+                if breadcrumb and not c_text.startswith("# "):
+                    child_contextualized = f"[{breadcrumb}]\n\n{c_text}"
+
+                child_id = f"{parent_id}-c{c_idx:03d}"
+                child_hash = hashlib.sha256(child_contextualized.encode("utf-8")).hexdigest()
+
+                child_chunk = DocumentChunk(
+                    chunk_id=child_id,
+                    text=child_contextualized,
+                    provider=provider,
+                    category=category,
+                    service=service,
+                    document_type=document_type,
+                    title=chunk_title or title,
+                    section=section,
+                    subsection=subsection,
+                    url=url,
+                    source=source,
+                    language="en",
+                    region="global",
+                    first_crawled=last_crawled,
+                    last_crawled=last_crawled,
+                    content_hash=child_hash,
+                    heading_breadcrumb=breadcrumb,
+                    char_count=len(child_contextualized),
+                    token_count=self._count_tokens(child_contextualized),
+                    service_status=service_status,
+                    parent_chunk_id=parent_id,
+                    child_index=c_idx,
+                    parser_version="html-md-v2",
+                    chunker_version="parent-child-v1",
+                )
+                children.append(child_chunk)
+
+            pairs.append((parent_chunk, children))
+
+        return pairs
+
+    # ── Legacy & Flat Chunking API ──────────────────────────────────────
+
+    def chunk_document(
+        self,
+        content: str,
+        provider: str = "",
+        category: str = "",
+        service: str = "",
+        url: str = "",
+        source: str = "",
+        document_type: str = "documentation",
+        title: str = "",
+        last_crawled: str = "",
+        service_status: str = "active",
+    ) -> list[DocumentChunk]:
+        """Split a cleaned document into semantic chunks with full metadata."""
+        if not content or not content.strip():
+            logger.warning("Empty content provided for chunking: url=%s", url)
+            return []
+
+        # Step 1: Parse heading structure
+        sections = self._parse_headings(content)
+
+        # Step 2: Build chunks from sections
+        raw_chunks = self._sections_to_chunks(sections)
+
+        # Step 3: Split oversized chunks, merge undersized
+        sized_chunks = self._apply_size_constraints(raw_chunks)
+
+        # Step 4: Build DocumentChunk objects with metadata
+        chunks: list[DocumentChunk] = []
+        for idx, (breadcrumb, text) in enumerate(sized_chunks):
+            if not text.strip():
+                continue
+
+            parts = [p.strip() for p in breadcrumb.split(" > ") if p.strip()]
+            section = parts[1] if len(parts) > 1 else ""
+            subsection = parts[2] if len(parts) > 2 else ""
+            chunk_title = parts[0] if parts else title
+
+            content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            chunk_id = self._generate_chunk_id(provider, service, section, idx)
+
+            contextualized_text = text
+            if breadcrumb and not text.startswith("# "):
+                contextualized_text = f"[{breadcrumb}]\n\n{text}"
+
+            chunks.append(
+                DocumentChunk(
+                    chunk_id=chunk_id,
+                    text=contextualized_text,
+                    provider=provider,
+                    category=category,
+                    service=service,
+                    document_type=document_type,
+                    title=chunk_title or title,
+                    section=section,
+                    subsection=subsection,
+                    url=url,
+                    source=source,
+                    language="en",
+                    region="global",
+                    first_crawled=last_crawled,
+                    last_crawled=last_crawled,
+                    content_hash=content_hash,
+                    heading_breadcrumb=breadcrumb,
+                    char_count=len(contextualized_text),
+                    token_count=self._count_tokens(contextualized_text),
+                    service_status=service_status,
+                    parent_chunk_id=None,
+                    child_index=idx,
+                    parser_version="html-md-v2",
+                    chunker_version="parent-child-v1",
+                )
+            )
+
+        logger.info(
+            "Chunked document: url=%s, chunks=%d, provider=%s, service=%s",
+            url,
+            len(chunks),
+            provider,
+            service,
+        )
+        return chunks
+
+    # ── Token-Based Boundary Splitting ──────────────────────────────────
+
+    def _split_into_token_chunks(
+        self,
+        text: str,
+        target_tokens: int = 450,
+        overlap_tokens: int = 50,
+    ) -> list[str]:
+        """Split text cleanly on code/table/paragraph boundaries within token budget."""
+        total_tokens = self._count_tokens(text)
+        if total_tokens <= target_tokens:
+            return [text]
+
+        protected = self._find_protected_regions(text)
+        paragraphs = text.split("\n\n")
+
+        chunks: list[str] = []
+        current_chunk = ""
+
+        for p in paragraphs:
+            candidate = current_chunk + ("\n\n" if current_chunk else "") + p
+            cand_tokens = self._count_tokens(candidate)
+
+            if cand_tokens > target_tokens and current_chunk:
+                chunks.append(current_chunk.strip())
+                # Overlap tail
+                tail_tokens = self._count_tokens(current_chunk)
+                if tail_tokens > overlap_tokens and self._tokenizer:
+                    enc = self._tokenizer.encode(current_chunk)
+                    overlap_str = self._tokenizer.decode(enc[-overlap_tokens:])
+                    current_chunk = overlap_str + "\n\n" + p
+                else:
+                    current_chunk = p
+            else:
+                current_chunk = candidate
+
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+
+        return chunks if chunks else [text]
+
+    # ── Heading Parser ──────────────────────────────────────────────────
+
+    def _parse_headings(self, content: str) -> list[tuple[str, str, int]]:
+        """Parse markdown content into (breadcrumb, section_text, level) tuples."""
+        heading_re = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
+        sections: list[tuple[str, str, int]] = []
+
+        heading_stack: list[tuple[int, str]] = []
+        matches = list(heading_re.finditer(content))
+
+        if not matches:
+            return [("", content.strip(), 0)]
+
+        for i, match in enumerate(matches):
+            if i == 0 and match.start() > 0:
+                pre_text = content[:match.start()].strip()
+                if pre_text:
+                    sections.append(("", pre_text, 0))
+
+            level = len(match.group(1))
+            title = match.group(2).strip()
+
+            while heading_stack and heading_stack[-1][0] >= level:
+                heading_stack.pop()
+            if len(heading_stack) >= 50:
+                logger.warning("heading_stack_depth_exceeded", extra={"depth": len(heading_stack)})
+                heading_stack.pop(0)
+            heading_stack.append((level, title))
+
+            current_breadcrumb = " > ".join(t for _, t in heading_stack)
+
+            start = match.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
+            section_text = content[start:end].strip()
+
+            heading_line = match.group(0)
+            full_text = f"{heading_line}\n\n{section_text}" if section_text else heading_line
+
+            sections.append((current_breadcrumb, full_text, level))
+
+        return sections
+
+    def _sections_to_chunks(
+        self, sections: list[tuple[str, str, int]]
+    ) -> list[tuple[str, str]]:
+        return [(breadcrumb, text) for breadcrumb, text, _level in sections if text.strip()]
+
+    def _apply_size_constraints(
+        self, chunks: list[tuple[str, str]]
+    ) -> list[tuple[str, str]]:
+        result: list[tuple[str, str]] = []
+
+        for breadcrumb, text in chunks:
+            if len(text) <= self.max_chunk_chars:
+                result.append((breadcrumb, text))
+            else:
+                sub_chunks = self._safe_split(text)
+                for sub in sub_chunks:
+                    result.append((breadcrumb, sub))
+
+        merged: list[tuple[str, str]] = []
+        for breadcrumb, text in result:
+            if (
+                merged
+                and len(text) < self.min_chunk_chars
+                and len(merged[-1][1]) + len(text) <= self.max_chunk_chars
+                and merged[-1][0] == breadcrumb
+            ):
+                prev_bc, prev_text = merged[-1]
+                merged[-1] = (prev_bc, prev_text + "\n\n" + text)
+            else:
+                merged.append((breadcrumb, text))
+
+        return merged
+
+    def _safe_split(self, text: str) -> list[str]:
+        protected = self._find_protected_regions(text)
+        separators = ["\n\n", "\n", ". ", " "]
+        for sep in separators:
+            parts = self._split_with_protection(text, sep, protected)
+            if parts and all(len(p) <= self.max_chunk_chars for p in parts):
+                return parts
+
+        chunks = []
+        for i in range(0, len(text), self.max_chunk_chars - self.overlap_chars):
+            chunk = text[i : i + self.max_chunk_chars]
+            if chunk.strip():
+                chunks.append(chunk.strip())
+        return chunks if chunks else [text]
+
+    def _split_with_protection(
+        self, text: str, separator: str, protected: list[tuple[int, int]]
+    ) -> list[str]:
+        if not text:
+            return []
+
+        def _is_inside_protected(pos: int) -> bool:
+            return any(start < pos < end for start, end in protected)
+
+        parts: list[str] = []
+        current = ""
+        current_offset = 0
+
+        segments = text.split(separator)
+        for segment in segments:
+            candidate = current + (separator if current else "") + segment
+            split_pos = current_offset + len(current)
+
+            if len(candidate) > self.max_chunk_chars and current:
+                # If the proposed split point is inside a code block or table, avoid breaking it
+                if not _is_inside_protected(split_pos):
+                    parts.append(current.strip())
+                    overlap_text = current[-self.overlap_chars :] if self.overlap_chars else ""
+                    current_offset += len(current) - len(overlap_text)
+                    current = (overlap_text + separator if overlap_text else "") + segment
+                else:
+                    current = candidate
+            else:
+                current = candidate
+
+        if current.strip():
+            parts.append(current.strip())
+
+        return parts
+
+    def _find_protected_regions(self, text: str) -> list[tuple[int, int]]:
+        regions: list[tuple[int, int]] = []
+        for match in re.finditer(r"```[\s\S]*?```", text):
+            regions.append((match.start(), match.end()))
+        table_re = re.compile(r"(?:^\|.+\|$\n?)+", re.MULTILINE)
+        for match in table_re.finditer(text):
+            regions.append((match.start(), match.end()))
+        return regions
+
+    @staticmethod
+    def _generate_chunk_id(
+        provider: str, service: str, section: str, index: int
+    ) -> str:
+        safe_section = re.sub(r"[^a-z0-9]+", "-", section.lower()).strip("-")[:40]
+        safe_service = re.sub(r"[^a-z0-9]+", "-", service.lower()).strip("-")[:20]
+        provider_prefix = provider.lower()[:5] if provider else "unknown"
+        return f"{provider_prefix}-{safe_service}-{safe_section}-{index:05d}"
