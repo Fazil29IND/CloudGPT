@@ -514,6 +514,90 @@ class Settings(BaseSettings):
         description="Timeout in seconds for adaptive RAG query transformation and execution",
     )
 
+    # ── Vector Search: HNSW & Quake Indexing ────────────────────────────
+    hnsw_m: int = Field(
+        default=16,
+        description="HNSW max bidirectional connections per node per layer",
+    )
+    hnsw_ef_construction: int = Field(
+        default=64,
+        description="HNSW construction candidate exploration list size",
+    )
+    hnsw_ef_search: int = Field(
+        default=32,
+        description="HNSW query candidate exploration list size",
+    )
+    hnsw_index_path: str = Field(
+        default="data/hnsw_index/services_hnsw.json",
+        description="Path to serialized HNSW vector graph index",
+    )
+    quake_num_partitions: int = Field(
+        default=16,
+        description="Quake initial centroid cluster partition count",
+    )
+    quake_min_probe: int = Field(
+        default=1,
+        description="Quake minimum partition probe count for focused queries",
+    )
+    quake_max_probe: int = Field(
+        default=5,
+        description="Quake maximum partition probe count for ambiguous queries",
+    )
+    quake_split_threshold: int = Field(
+        default=50,
+        description="Quake query access count triggering dynamic partition split",
+    )
+    quake_index_path: str = Field(
+        default="data/quake_index/services_quake.json",
+        description="Path to serialized Quake adaptive vector index",
+    )
+
+    # ── Query Processing & Orchestration (3-Tier RAG) ───────────────────
+    enable_query_normalization: bool = Field(
+        default=True,
+        description="Enable query cleaning, cloud canonical mapping, and technical token preservation in Hybrid RAG",
+    )
+    enable_contextual_query_rewriting: bool = Field(
+        default=True,
+        description="Enable multi-turn pronoun and anaphora resolution from conversation history",
+    )
+    enable_conditional_decomposition: bool = Field(
+        default=True,
+        description="Conditionally gate query decomposition in Agentic RAG based on complexity score",
+    )
+    agentic_decomposition_complexity_threshold: float = Field(
+        default=0.65,
+        description="Query complexity threshold (0.0-1.0) above which Agentic RAG decomposes queries",
+    )
+    enable_iterative_query_refinement: bool = Field(
+        default=True,
+        description="Enable iterative query refinement loop in Agentic RAG when evidence sufficiency is low",
+    )
+    agentic_max_refinement_hops: int = Field(
+        default=1,
+        description="Maximum refinement retrieval hops in Agentic RAG",
+    )
+    agentic_refinement_sufficiency_threshold: float = Field(
+        default=0.55,
+        description="Relevance grade threshold below which Agentic RAG triggers iterative query refinement",
+    )
+    enable_adaptive_query_routing: bool = Field(
+        default=True,
+        description="Enable adaptive query routing in Adaptive RAG (direct_fast, semantic_hyde, multi_perspective)",
+    )
+    enable_selective_query_transformation: bool = Field(
+        default=True,
+        description="Dynamically select transformations (HyDE, rewrite, expansion) based on query profile in Adaptive RAG",
+    )
+    enable_retrieval_feedback_replanning: bool = Field(
+        default=True,
+        description="Enable self-correcting retrieval feedback and re-planning loop in Adaptive RAG",
+    )
+    adaptive_replan_feedback_threshold: float = Field(
+        default=0.40,
+        description="Candidate relevance feedback threshold below which Adaptive RAG triggers re-planning",
+    )
+
     # ── Cache & Corpus Versioning ───────────────────────────────────────
     cache_corpus_version: str = Field(
         default="v2",

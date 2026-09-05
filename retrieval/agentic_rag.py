@@ -26,7 +26,7 @@ from chunking.hierarchical_store import HierarchicalChunkStore
 from config import get_settings
 from core.llm_cache import get_cached_retrieval_result, set_cached_retrieval_result
 from llm.provider import get_sub_model_provider
-from llm.system_prompts import AGENTIC_PLAN_PROMPT, EVIDENCE_GRADE_PROMPT, SELF_CRITIQUE_PROMPT
+from llm.system_prompts import AGENTIC_PLAN_PROMPT, AGENTIC_REFINE_PROMPT, EVIDENCE_GRADE_PROMPT, SELF_CRITIQUE_PROMPT
 from metrics import RAG_STAGE_DURATION_SECONDS, RAG_RESULTS_COUNT, PIPELINE_TIMEOUTS_TOTAL
 from retrieval.hybrid import RetrievalResult
 from router.query_router import QueryClassification, provider_aliases
@@ -76,14 +76,27 @@ class AgenticRAGPipeline:
         t0 = time.perf_counter()
         logger.debug("pipeline.stage_start", stage="plan_route", tier=tier, query_hash=query_hash)
 
+        def _infer_modality(q: str) -> str:
+            q_low = q.lower()
+            if re.search(r"(--[a-zA-Z0-9_-]+|\b[A-Z][a-zA-Z0-9]+Exception\b|\bError:\b|\b\d{3}\s+Forbidden\b|\b\d+\.\d+\.\d+\b)", q):
+                return "sparse"
+            if any(cmd in q_low for cmd in ["aws ", "az ", "gcloud ", "kubectl ", "terraform ", "error ", "status code"]):
+                return "sparse"
+            if any(concept in q_low for concept in ["architecture", "overview", "what is", "trade-off", "design pattern", "best practice"]):
+                return "dense"
+            return "hybrid"
+
         default_plan: dict[str, Any] = {
             "intent": "explain",
             "routes": ["RAG"],
             "retrieval_strategy": "broad",
+            "retrieval_modality": _infer_modality(query),
             "sub_queries": [],
             "providers": [],
             "needs_internet": False,
             "confidence": 0.7,
+            "complexity_score": 0.35,
+            "decomposition_applied": False,
         }
 
         try:
@@ -94,10 +107,12 @@ class AgenticRAGPipeline:
                 timeout=budget,
             )
             data = json.loads(raw)
+            raw_modality = data.get("retrieval_modality")
             plan = {
                 "intent": data.get("intent", "explain"),
                 "routes": data.get("routes", ["RAG"]),
                 "retrieval_strategy": data.get("retrieval_strategy", "broad"),
+                "retrieval_modality": raw_modality if raw_modality in ("dense", "sparse", "hybrid") else _infer_modality(query),
                 "sub_queries": data.get("sub_queries", [])[:3] if isinstance(data.get("sub_queries"), list) else [],
                 "providers": data.get("providers", []) if isinstance(data.get("providers"), list) else [],
                 "needs_internet": bool(data.get("needs_internet", False)),
@@ -122,18 +137,64 @@ class AgenticRAGPipeline:
         except Exception as e:
             logger.warning("plan_route.llm_error", error=str(e), tier=tier)
             plan = default_plan
-        # Recommendation bias: force multi-hop for cross-provider comparison queries
+
+        # Agent-Driven Query Planning: Calculate Query Complexity
+        def _calc_complexity(q: str, raw_d: dict[str, Any]) -> float:
+            if "complexity_score" in raw_d:
+                try:
+                    return max(0.0, min(1.0, float(raw_d["complexity_score"])))
+                except (ValueError, TypeError):
+                    pass
+            q_l = q.lower()
+            c = 0.35
+            if any(ind in q_l for ind in [" vs ", " versus ", "compare", "recommend", "difference between", "better"]):
+                c += 0.35
+            provs = sum(1 for p in ["aws", "gcp", "azure", "google cloud"] if p in q_l)
+            if provs >= 2:
+                c += 0.25
+            if any(conj in q_l for conj in [" and also ", " along with ", ";", "?", " as well as "]):
+                c += 0.15
+            if any(arch in q_l for arch in ["architecture", "migration", "failover", "disaster recovery", "trade-off", "high availability"]):
+                c += 0.15
+            return round(min(1.0, c), 2)
+
+        raw_data = data if "data" in locals() and isinstance(data, dict) else {}
+        complexity_score = _calc_complexity(query, raw_data)
+        plan["complexity_score"] = complexity_score
+
+        # Conditional Query Decomposition:
+        decomp_threshold = float(getattr(self.settings, "agentic_decomposition_complexity_threshold", 0.65))
+        decomp_enabled = bool(getattr(self.settings, "enable_conditional_decomposition", True))
+
         _query_lower = query.lower()
         _comparison_indicators = ["recommend", "which", "compare", "vs ", "versus", "best service", "should i use"]
-        if any(ind in _query_lower for ind in _comparison_indicators) and getattr(self.settings, "recommendation_comparison_bias", True):
-            if plan["retrieval_strategy"] != "multi-hop":
-                plan["retrieval_strategy"] = "multi-hop"
+        is_comparative = any(ind in _query_lower for ind in _comparison_indicators)
+
+        if decomp_enabled:
+            # If the LLM already gave sub_queries or query is complex/comparative, enable decomposition
+            has_subqueries = bool(plan.get("sub_queries"))
+            should_decompose = has_subqueries or complexity_score >= decomp_threshold or (is_comparative and getattr(self.settings, "recommendation_comparison_bias", True))
+            if should_decompose:
+                if plan["retrieval_strategy"] != "multi-hop":
+                    plan["retrieval_strategy"] = "multi-hop"
                 if not plan.get("sub_queries"):
                     detected_providers = plan.get("providers") or ["aws", "gcp", "azure"]
-                    plan["sub_queries"] = [
-                        f"{query} on {p.upper()}" for p in detected_providers[:3]
-                    ]
-                logger.info("agentic_rag.recommendation_bias_applied", strategy="multi-hop", tier=tier)
+                    plan["sub_queries"] = [f"{query} on {p.upper()}" for p in detected_providers[:3]]
+                plan["decomposition_applied"] = bool(plan.get("sub_queries"))
+            else:
+                # Focused atomic query: prevent unnecessary multi-hop fan-out
+                plan["sub_queries"] = []
+                plan["decomposition_applied"] = False
+                if plan["retrieval_strategy"] == "multi-hop":
+                    plan["retrieval_strategy"] = "broad"
+        else:
+            if is_comparative and getattr(self.settings, "recommendation_comparison_bias", True):
+                if plan["retrieval_strategy"] != "multi-hop":
+                    plan["retrieval_strategy"] = "multi-hop"
+                if not plan.get("sub_queries"):
+                    detected_providers = plan.get("providers") or ["aws", "gcp", "azure"]
+                    plan["sub_queries"] = [f"{query} on {p.upper()}" for p in detected_providers[:3]]
+            plan["decomposition_applied"] = bool(plan.get("sub_queries"))
 
         elapsed = time.perf_counter() - t0
         plan["_timing_ms"] = round(elapsed * 1000, 2)
@@ -145,7 +206,10 @@ class AgenticRAGPipeline:
             duration_ms=round(elapsed * 1000, 2),
             intent=plan["intent"],
             strategy=plan["retrieval_strategy"],
+            modality=plan.get("retrieval_modality", "hybrid"),
             sub_queries_count=len(plan["sub_queries"]),
+            complexity=plan["complexity_score"],
+            decomposition_applied=plan["decomposition_applied"],
             needs_internet=plan["needs_internet"],
         )
         return plan
@@ -160,6 +224,7 @@ class AgenticRAGPipeline:
         tier: str,
         retriever: Any,
         reranker: Any,
+        retrieval_modality: str = "hybrid",
     ) -> tuple[list[RetrievalResult], str]:
         t0 = time.perf_counter()
         cache_query_key = f"agentic:{hashlib.sha256(query.encode()).hexdigest()[:16]}:{provider_filter or 'all'}:{tier}"
@@ -188,6 +253,9 @@ class AgenticRAGPipeline:
         if provider_filter:
             aliases = provider_aliases(provider_filter)
             prov_filter_dict = {"provider": aliases if len(aliases) > 1 else provider_filter.lower()}
+
+        dense_ret = getattr(retriever, "dense_retriever", None)
+        sparse_ret = getattr(retriever, "sparse_retriever", None)
 
         if retrieval_strategy == "multi-hop" and sub_queries:
             async def _retrieve_sq(sq_text: str):
@@ -237,6 +305,75 @@ class AgenticRAGPipeline:
             else:
                 top_results = candidates[:self.settings.rerank_top_k]
             fallback_pass = "agentic_multi_hop"
+        elif dense_ret and sparse_ret and retrieval_modality in ("dense", "sparse", "hybrid"):
+            # Agentic Retrieval Routing:
+            # Execute selected modality, applying RRF only when both are used!
+            try:
+                if retrieval_modality == "dense":
+                    candidates = await dense_ret.retrieve(
+                        query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                    )
+                    fallback_pass = "agentic_dense_hnsw"
+                elif retrieval_modality == "sparse":
+                    candidates = await sparse_ret.retrieve(
+                        query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                    )
+                    fallback_pass = "agentic_sparse_bm25"
+                else:  # "hybrid" -> Both are used, apply RRF Fusion!
+                    dense_task = dense_ret.retrieve(
+                        query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                    )
+                    sparse_task = sparse_ret.retrieve(
+                        query, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
+                    )
+                    dense_res, sparse_res = await asyncio.gather(dense_task, sparse_task, return_exceptions=True)
+
+                    d_list = dense_res if isinstance(dense_res, list) else []
+                    s_list = sparse_res if isinstance(sparse_res, list) else []
+
+                    # RRF Fusion across dense and sparse
+                    k_rrf = 60
+                    merged_dict: dict[str, RetrievalResult] = {}
+                    scores_dict: dict[str, float] = {}
+                    w_dense = getattr(self.settings, "dense_weight", 0.6)
+                    w_sparse = getattr(self.settings, "sparse_weight", 0.4)
+
+                    for rank, res in enumerate(sorted(d_list, key=lambda x: x.score, reverse=True)):
+                        if res.chunk_id not in scores_dict:
+                            scores_dict[res.chunk_id] = 0.0
+                            merged_dict[res.chunk_id] = res
+                        scores_dict[res.chunk_id] += w_dense * (1.0 / (k_rrf + rank + 1))
+
+                    for rank, res in enumerate(sorted(s_list, key=lambda x: x.score, reverse=True)):
+                        if res.chunk_id not in scores_dict:
+                            scores_dict[res.chunk_id] = 0.0
+                            merged_dict[res.chunk_id] = res
+                        scores_dict[res.chunk_id] += w_sparse * (1.0 / (k_rrf + rank + 1))
+
+                    for cid in merged_dict:
+                        merged_dict[cid].score = scores_dict[cid]
+
+                    candidates = sorted(merged_dict.values(), key=lambda x: x.score, reverse=True)[:self.settings.retrieval_top_k]
+                    fallback_pass = "agentic_hybrid_rrf"
+
+                if candidates and reranker:
+                    top_results = await asyncio.to_thread(
+                        reranker.rerank, query, candidates, self.settings.rerank_top_k
+                    )
+                else:
+                    top_results = candidates[:self.settings.rerank_top_k]
+            except Exception as e:
+                logger.warning("agentic_retrieve.modality_routing_error", error=str(e))
+                from api.chat_routes import _retrieve_with_fallback
+                budget = (self.settings.budget_retrieval_ms + self.settings.budget_reranking_ms) / 1000.0
+                top_results, fallback_pass = await asyncio.wait_for(
+                    _retrieve_with_fallback(
+                        retriever, reranker, query, provider_filter,
+                        classification, self.settings,
+                        expand_to_parents=True,
+                    ),
+                    timeout=budget,
+                )
         else:
             from api.chat_routes import _retrieve_with_fallback
             budget = (self.settings.budget_retrieval_ms + self.settings.budget_reranking_ms) / 1000.0
@@ -454,6 +591,62 @@ class AgenticRAGPipeline:
                         expansions += 1
 
         return enriched
+
+    def _evaluate_sufficiency(
+        self,
+        graded_chunks: list[RetrievalResult],
+        plan: dict[str, Any],
+    ) -> tuple[bool, float, str]:
+        """Evaluate if retrieved and graded evidence is sufficient to answer the query."""
+        if not graded_chunks:
+            return False, 0.0, "zero_candidates_retrieved"
+
+        grade_scores = [
+            float(c.metadata.get("grade_score", c.score)) for c in graded_chunks
+        ]
+        max_score = max(grade_scores) if grade_scores else 0.0
+        thresh = float(getattr(self.settings, "agentic_refinement_sufficiency_threshold", 0.55))
+
+        if max_score < thresh:
+            return False, max_score, f"low_relevance_evidence (max {max_score:.2f} < {thresh:.2f})"
+
+        high_quality_count = sum(1 for s in grade_scores if s >= thresh)
+        if high_quality_count < 1:
+            return False, max_score, "insufficient_high_confidence_evidence"
+
+        return True, max_score, "sufficient"
+
+    async def _refine_query(
+        self,
+        query: str,
+        plan: dict[str, Any],
+        graded_chunks: list[RetrievalResult],
+        tier: str,
+    ) -> str:
+        """Formulate a targeted follow-up query to fill identified evidence gaps."""
+        try:
+            router_llm = get_sub_model_provider("router", tier)
+            evidence_preview = "\n".join(
+                f"[{i}]: {c.text[:250]}" for i, c in enumerate(graded_chunks[:3])
+            )
+            prompt = (
+                f"ORIGINAL QUERY: {query}\n"
+                f"INITIAL PLAN INTENT: {plan.get('intent', 'explain')}\n"
+                f"CURRENT EVIDENCE SNIPPETS:\n{evidence_preview}\n"
+                f"TASK: Generate a single, highly specific technical query to retrieve missing evidence."
+            )
+            raw = await asyncio.wait_for(
+                router_llm.classify(prompt, system_prompt=AGENTIC_REFINE_PROMPT),
+                timeout=5.0,
+            )
+            data = json.loads(raw)
+            refined = data.get("refined_query", "").strip()
+            if refined:
+                return refined
+        except Exception as e:
+            logger.warning("agentic_rag.refine_query_fallback", error=str(e))
+
+        return f"{query} technical specifications configuration limits"
 
     async def _generate_and_verify(
         self,
@@ -793,6 +986,7 @@ class AgenticRAGPipeline:
             tier=tier,
             retriever=retriever,
             reranker=reranker,
+            retrieval_modality=plan.get("retrieval_modality", "hybrid"),
         )
 
         (chunks, fallback_pass), internet_results, pricing_data, calc_results = await asyncio.gather(
@@ -841,6 +1035,54 @@ class AgenticRAGPipeline:
 
         t0_grade = time.perf_counter()
         graded_chunks = await self._grade_evidence(query, chunks, tier)
+
+        # Stage 3b — Iterative Query Refinement (triggered when evidence sufficiency is below threshold)
+        if getattr(self.settings, "enable_iterative_query_refinement", True):
+            is_sufficient, max_score, gap_reason = self._evaluate_sufficiency(graded_chunks, plan)
+            if not is_sufficient and getattr(self.settings, "agentic_max_refinement_hops", 1) > 0:
+                logger.info(
+                    "agentic_rag.refinement_triggered",
+                    max_score=max_score,
+                    gap_reason=gap_reason,
+                    tier=tier,
+                )
+                t0_refine = time.perf_counter()
+                refined_query = await self._refine_query(query, plan, graded_chunks, tier)
+                if refined_query and refined_query.strip() != query.strip():
+                    refine_chunks, _ = await self._hybrid_retrieve(
+                        query=refined_query,
+                        sub_queries=[],
+                        retrieval_strategy="narrow",
+                        provider_filter=provider_filter,
+                        classification=classification,
+                        tier=tier,
+                        retriever=retriever,
+                        reranker=reranker,
+                        retrieval_modality=plan.get("retrieval_modality", "hybrid"),
+                    )
+                    if refine_chunks:
+                        graded_refine = await self._grade_evidence(refined_query, refine_chunks, tier)
+                        seen_cids = {c.chunk_id for c in graded_chunks}
+                        for c in graded_refine:
+                            if c.chunk_id not in seen_cids:
+                                seen_cids.add(c.chunk_id)
+                                graded_chunks.append(c)
+                                m = c.metadata
+                                citation_mgr.register_source(
+                                    source_type="rag",
+                                    url=m.get("url", ""),
+                                    provider=m.get("provider", "cloud"),
+                                    service=m.get("service", ""),
+                                    title=m.get("title", "Cloud Documentation"),
+                                    section=m.get("section", ""),
+                                )
+                        graded_chunks = sorted(
+                            graded_chunks,
+                            key=lambda x: float(x.metadata.get("grade_score", x.score)),
+                            reverse=True,
+                        )[:self.settings.retrieval_top_k]
+                timings["iterative_refinement"] = round((time.perf_counter() - t0_refine) * 1000, 2)
+
         graded_chunks = self._expand_hierarchical_context(graded_chunks)
         timings["grade_evidence"] = round((time.perf_counter() - t0_grade) * 1000, 2)
 

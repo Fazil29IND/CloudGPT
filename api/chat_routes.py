@@ -72,7 +72,7 @@ from metrics import (
 )
 from core.semantic_cache import get_semantic_cache
 from retrieval.bm25 import SparseRetriever
-from retrieval.dense import DenseRetriever
+from retrieval.dense import DenseRetriever, HNSWRetriever, QuakeRetriever, get_default_hnsw_index, get_default_quake_index
 from retrieval.hybrid import HybridRetriever
 from retrieval.reranker import Reranker
 from router.query_router import QueryRouter, provider_aliases
@@ -280,6 +280,17 @@ class AgentPipeline:
             self.get_retrieval()
         return self.embedding_engine
 
+    def get_quake_retriever(self):
+        if getattr(self, "quake_retriever", None) is None:
+            if self.embedding_engine is None:
+                return None
+            self.quake_retriever = QuakeRetriever(
+                embedding_engine=self.embedding_engine,
+                quake_index=get_default_quake_index(self.settings),
+                pinecone_manager=self.pinecone_manager,
+            )
+        return self.quake_retriever
+
     def get_retrieval(self):
         if self.hybrid_retriever is None:
             self.embedding_engine = EmbeddingEngine(
@@ -288,7 +299,21 @@ class AgentPipeline:
                 dimension=self.settings.embedding_dimension
             )
             self.pinecone_manager = PineconeManager(self.settings)
-            dense = DenseRetriever(self.embedding_engine, self.pinecone_manager)
+            self.hnsw_retriever = HNSWRetriever(
+                embedding_engine=self.embedding_engine,
+                hnsw_index=get_default_hnsw_index(self.settings),
+                pinecone_manager=self.pinecone_manager,
+            )
+            self.quake_retriever = QuakeRetriever(
+                embedding_engine=self.embedding_engine,
+                quake_index=get_default_quake_index(self.settings),
+                pinecone_manager=self.pinecone_manager,
+            )
+            dense = DenseRetriever(
+                self.embedding_engine,
+                self.pinecone_manager,
+                hnsw_index=self.hnsw_retriever.hnsw_index,
+            )
             sparse = SparseRetriever(self.embedding_engine, self.pinecone_manager)
             self.hybrid_retriever = HybridRetriever(
                 dense_retriever=dense,
@@ -578,6 +603,7 @@ async def _retrieve_with_fallback(
     settings,
     top_k_override: int | None = None,
     expand_to_parents: bool = True,
+    chat_history: list[dict] | None = None,
 ) -> tuple[list, str]:
     """Execute 3-pass retrieval sequence: strict -> provider -> global with async reranking and parent resolution."""
     retrieval_k = top_k_override or settings.retrieval_top_k
@@ -585,9 +611,12 @@ async def _retrieve_with_fallback(
 
     async def _safe_retrieve(filters):
         try:
-            return await retriever.retrieve(query=query, top_k=retrieval_k, filters=filters, **retrieve_args)
+            return await retriever.retrieve(query=query, top_k=retrieval_k, filters=filters, chat_history=chat_history, **retrieve_args)
         except TypeError:
-            return await retriever.retrieve(query=query, top_k=retrieval_k, filters=filters)
+            try:
+                return await retriever.retrieve(query=query, top_k=retrieval_k, filters=filters, **retrieve_args)
+            except TypeError:
+                return await retriever.retrieve(query=query, top_k=retrieval_k, filters=filters)
 
     strict_f = _build_strict_filter(provider_filter, classification)
     if strict_f:
@@ -622,6 +651,7 @@ async def _gather_pipeline_context(
     provider_filter: str | None,
     tier: str,
     emit_event: EmitEvent | None = None,
+    chat_history: list[dict] | None = None,
 ) -> tuple:
     """Classify the query and run routed tools with latency budgets and per-stage metrics."""
     router_instance = pipeline.get_router(tier)
@@ -809,6 +839,7 @@ async def _gather_pipeline_context(
                         classification,
                         pipeline.settings,
                         top_k_override=adaptive_top_k,
+                        chat_history=chat_history,
                     ),
                     timeout=budget_rag,
                 )
@@ -1302,7 +1333,7 @@ async def execute_agent_pipeline(
             citation_mgr,
             stage_timings,
             fallback_pass,
-        ) = await _gather_pipeline_context(query, provider_filter, tier, emit_event=emit_event)
+        ) = await _gather_pipeline_context(query, provider_filter, tier, emit_event=emit_event, chat_history=chat_history)
     except asyncio.CancelledError:
         logger.info("pipeline_cancelled", query=query[:40], tier=tier, reason="client_disconnect")
         raise

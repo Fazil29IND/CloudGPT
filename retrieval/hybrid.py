@@ -19,6 +19,7 @@ from metrics import RAG_FALLBACK_TOTAL
 from . import RetrievalResult
 from .bm25 import SparseRetriever
 from .dense import DenseRetriever
+from .query_processor import QueryContext, normalize_query, rewrite_contextual_query
 
 logger = structlog.get_logger(__name__)
 
@@ -58,9 +59,11 @@ class HybridRetriever:
 
     def _select_namespaces(self, filters: dict | None = None) -> list[str]:
         """Determine target versioned namespaces based on filters and active corpus version."""
-        mgr = self.dense_retriever.pinecone_manager
+        mgr = getattr(self.dense_retriever, "pinecone_manager", None)
         settings = get_settings()
         version = getattr(settings, "active_corpus_version", "v1")
+        if not mgr:
+            return [f"services-{version}", f"senior-engineer-knowledge-{version}", f"troubleshooting-playbooks-{version}", f"iac-templates-{version}"]
         active_services = mgr.active_namespace("services")
 
         if filters:
@@ -106,25 +109,57 @@ class HybridRetriever:
 
     async def retrieve(
         self,
-        query: str,
+        query: str | QueryContext,
         top_k: int = 50,
         filters: dict | None = None,
         namespace: str | None = None,
         namespaces: list[str] | None = None,
         expand_to_parents: bool = False,
+        chat_history: list[dict] | None = None,
     ) -> list[RetrievalResult]:
-        """Concurrently query dense and sparse retrievers across target namespaces."""
+        """Concurrently query dense and sparse retrievers across target namespaces with normalization and original preservation."""
         try:
+            settings = get_settings()
+            if isinstance(query, QueryContext):
+                q_ctx = query
+            elif isinstance(query, str):
+                if getattr(settings, "enable_query_normalization", True):
+                    if chat_history and getattr(settings, "enable_contextual_query_rewriting", True):
+                        q_ctx = rewrite_contextual_query(query, chat_history=chat_history)
+                    else:
+                        norm_q = normalize_query(query)
+                        q_ctx = QueryContext(
+                            original_query=query,
+                            normalized_query=norm_q,
+                            rewritten_query=norm_q,
+                            is_rewritten=False,
+                            is_exact_technical=self._is_exact_technical_query(query),
+                        )
+                else:
+                    q_ctx = QueryContext(
+                        original_query=query,
+                        normalized_query=query,
+                        rewritten_query=query,
+                        is_rewritten=False,
+                        is_exact_technical=self._is_exact_technical_query(query),
+                    )
+            else:
+                q_str = str(query)
+                q_ctx = QueryContext(original_query=q_str, normalized_query=q_str, rewritten_query=q_str)
+
+            dense_search_text = q_ctx.effective_search_query
+            sparse_search_text = q_ctx.original_query or q_ctx.normalized_query
+
             target_namespaces = namespaces or ([namespace] if namespace else self._select_namespaces(filters))
-            dense_weight, sparse_weight = self._get_effective_weights(query)
+            dense_weight, sparse_weight = self._get_effective_weights(q_ctx.original_query)
 
             # Concurrent fan-out across all target namespaces with per-namespace fault isolation
             dense_tasks = [
-                self.dense_retriever.retrieve(query, top_k=top_k, filters=filters, namespace=ns)
+                self.dense_retriever.retrieve(dense_search_text, top_k=top_k, filters=filters, namespace=ns)
                 for ns in target_namespaces
             ]
             sparse_tasks = [
-                self.sparse_retriever.retrieve(query, top_k=top_k, filters=filters, namespace=ns)
+                self.sparse_retriever.retrieve(sparse_search_text, top_k=top_k, filters=filters, namespace=ns)
                 for ns in target_namespaces
             ]
 
@@ -173,17 +208,17 @@ class HybridRetriever:
             # Graceful degraded fallback if one retriever produces no candidates
             if not dense_candidates and sparse_candidates:
                 RAG_FALLBACK_TOTAL.labels(fallback_type="dense_to_sparse").inc()
-                logger.info("hybrid_retrieval_fallback_sparse_only", query_prefix=query[:40])
+                logger.info("hybrid_retrieval_fallback_sparse_only", query_prefix=q_ctx.original_query[:40])
                 dense_weight = 0.0
                 sparse_weight = 1.0
             elif not sparse_candidates and dense_candidates:
                 RAG_FALLBACK_TOTAL.labels(fallback_type="sparse_to_dense").inc()
-                logger.info("hybrid_retrieval_fallback_dense_only", query_prefix=query[:40])
+                logger.info("hybrid_retrieval_fallback_dense_only", query_prefix=q_ctx.original_query[:40])
                 dense_weight = 1.0
                 sparse_weight = 0.0
             elif not dense_candidates and not sparse_candidates:
                 RAG_FALLBACK_TOTAL.labels(fallback_type="retrieval_empty").inc()
-                logger.warning("hybrid_retrieval_empty_candidates", query_prefix=query[:40])
+                logger.warning("hybrid_retrieval_empty_candidates", query_prefix=q_ctx.original_query[:40])
                 return []
 
             # Sort candidate lists for RRF rank computation

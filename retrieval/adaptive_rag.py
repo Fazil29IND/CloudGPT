@@ -25,7 +25,7 @@ from chunking.hierarchical_store import HierarchicalChunkStore
 from config import get_settings
 from core.llm_cache import get_cached_retrieval_result, set_cached_retrieval_result
 from llm.provider import get_sub_model_provider
-from llm.system_prompts import QUERY_TRANSFORM_PROMPT
+from llm.system_prompts import QUERY_TRANSFORM_PROMPT, ADAPTIVE_REPLAN_PROMPT
 from metrics import RAG_STAGE_DURATION_SECONDS, RAG_RESULTS_COUNT, PIPELINE_TIMEOUTS_TOTAL
 from retrieval.hybrid import RetrievalResult
 from router.query_router import QueryClassification, provider_aliases
@@ -78,10 +78,30 @@ class AdaptiveAdvancedRAGPipeline:
         t0 = time.perf_counter()
         logger.debug("pipeline.stage_start", stage="transform_query", tier=tier, query_hash=query_hash)
 
+        def _detect_routing_path(q: str) -> str:
+            q_strip = q.strip()
+            is_cli_cmd = bool(re.match(r"^(aws|az|gcloud|kubectl|terraform)\s+[a-z0-9_-]+", q_strip, re.IGNORECASE))
+            has_cli_flag_or_code = bool(re.search(
+                r"(--[a-zA-Z0-9_-]+|\b[A-Z][a-zA-Z0-9]+Exception\b|\b[A-Z][a-zA-Z0-9]+Error\b|"
+                r"\bError:\s*[A-Z0-9_-]+\b|\b\d{3}\s+(Forbidden|Unauthorized|NotFound)\b|"
+                r"\b(status code|exit code)\s+\d+\b)",
+                q,
+            ))
+            if is_cli_cmd or has_cli_flag_or_code:
+                return "direct_fast"
+            if any(comp in q.lower() for comp in ["compare", " vs ", "versus", "difference between", "trade-off", "migration"]):
+                return "multi_perspective"
+            return "semantic_hyde"
+
+        routing_path = _detect_routing_path(query)
+        selective_enabled = bool(getattr(self.settings, "enable_selective_query_transformation", True))
+
         identity: dict[str, Any] = {
             "rewritten_query": query,
             "expanded_queries": [query],
             "hyde_passage": query,
+            "routing_path": routing_path,
+            "applied_transformations": ["identity"],
         }
 
         try:
@@ -108,10 +128,32 @@ class AdaptiveAdvancedRAGPipeline:
             if not hyde:
                 hyde = query
 
+            applied_trans = []
+            if selective_enabled:
+                if routing_path == "direct_fast":
+                    # Exact syntax/CLI queries: skip hypothetical passage unless explicitly generated
+                    if not data.get("hyde_passage") or data.get("hyde_passage") == query:
+                        hyde = query
+                        applied_trans.append("direct_passthrough")
+                    else:
+                        applied_trans.extend(["direct_passthrough", "hyde"])
+                    if len(expanded) > 1:
+                        applied_trans.append("expansion")
+                elif routing_path == "semantic_hyde":
+                    applied_trans.extend(["rewrite", "hyde"])
+                    if len(expanded) > 1:
+                        applied_trans.append("expansion")
+                else:  # "multi_perspective"
+                    applied_trans.extend(["rewrite", "expansion", "hyde"])
+            else:
+                applied_trans.extend(["rewrite", "expansion", "hyde"])
+
             transformed = {
                 "rewritten_query": rewritten,
                 "expanded_queries": expanded,
                 "hyde_passage": hyde,
+                "routing_path": routing_path,
+                "applied_transformations": applied_trans,
             }
         except asyncio.CancelledError:
             raise
@@ -137,6 +179,8 @@ class AdaptiveAdvancedRAGPipeline:
             stage="transform_query",
             tier=tier,
             duration_ms=transformed["_timing_ms"],
+            routing_path=transformed.get("routing_path", "semantic_hyde"),
+            transformations=transformed.get("applied_transformations", []),
             expanded_count=len(transformed["expanded_queries"]),
         )
         return transformed
@@ -170,6 +214,23 @@ class AdaptiveAdvancedRAGPipeline:
             dict.fromkeys([transformed["rewritten_query"]] + transformed["expanded_queries"])
         )[:4]
 
+        def _compute_adaptive_fusion_weights(q: str, rewritten: str) -> tuple[float, float]:
+            """Compute dynamic query-adaptive fusion weights alpha(q) for Quake dense vs BM25 sparse."""
+            combined = f"{q} {rewritten}".lower()
+            is_exact = bool(re.search(r"(--[a-zA-Z0-9_-]+|\b[A-Z][a-zA-Z0-9]+Exception\b|\bError:\b|\b\d{3}\s+Forbidden\b|\b\d+\.\d+\.\d+\b)", combined))
+            has_cli = any(cmd in combined for cmd in ["aws ", "az ", "gcloud ", "kubectl ", "terraform "])
+            is_abstract = any(word in combined for word in ["architecture", "compare", "trade-off", "design", "overview", "pattern", "best practice"])
+
+            if is_exact or has_cli:
+                w_dense = 0.3
+            elif is_abstract:
+                w_dense = 0.7
+            else:
+                w_dense = 0.55
+            return w_dense, 1.0 - w_dense
+
+        w_dense, w_sparse = _compute_adaptive_fusion_weights(original_query, transformed.get("rewritten_query", ""))
+
         tasks = [
             retriever.retrieve(
                 q,
@@ -184,7 +245,22 @@ class AdaptiveAdvancedRAGPipeline:
 
         async def _hyde_search() -> list[RetrievalResult]:
             try:
-                if not agent_pipeline.embedding_engine or not agent_pipeline.pinecone_manager:
+                if not getattr(agent_pipeline, "embedding_engine", None):
+                    return []
+
+                # 1. Check if agent_pipeline has a configured QuakeRetriever
+                quake_ret = getattr(agent_pipeline, "quake_retriever", None)
+                if quake_ret:
+                    res = await quake_ret.retrieve(
+                        query=transformed["hyde_passage"],
+                        top_k=max(1, self.settings.retrieval_top_k // 2),
+                        filters=provider_filter_dict,
+                    )
+                    if res:
+                        return res
+
+                # 2. Fallback to pinecone_manager
+                if not getattr(agent_pipeline, "pinecone_manager", None):
                     return []
                 hyde_vec = await agent_pipeline.embedding_engine.embed_query(
                     transformed["hyde_passage"]
@@ -245,18 +321,20 @@ class AdaptiveAdvancedRAGPipeline:
         scores: dict[str, float] = {}
         k_rrf = 60
 
-        for batch in all_results:
+        for b_idx, batch in enumerate(all_results):
             if isinstance(batch, (Exception, BaseException)) or not batch:
                 continue
             clean_batch = [r for r in batch if isinstance(r, RetrievalResult)]
             if not clean_batch:
                 continue
             sorted_batch = sorted(clean_batch, key=lambda r: r.score, reverse=True)
+            # Apply adaptive fusion weight: HyDE batch (last) gets dense weight, query batches get blended weight
+            b_weight = w_dense if b_idx == len(all_results) - 1 else 1.0
             for rank, res in enumerate(sorted_batch):
                 if res.chunk_id not in scores:
                     scores[res.chunk_id] = 0.0
                     merged[res.chunk_id] = res
-                scores[res.chunk_id] += 1.0 / (k_rrf + rank + 1)
+                scores[res.chunk_id] += b_weight * (1.0 / (k_rrf + rank + 1))
 
         for cid in merged:
             merged[cid].score = scores[cid]
@@ -304,6 +382,78 @@ class AdaptiveAdvancedRAGPipeline:
             candidate_count=len(candidates),
         )
         return candidates, "adaptive_multi_query"
+
+    def _evaluate_retrieval_feedback(
+        self,
+        candidates: list[RetrievalResult],
+        query: str,
+        transformed: dict[str, Any],
+    ) -> tuple[bool, float, str]:
+        """Evaluate post-retrieval feedback metrics to determine if re-planning is required."""
+        if not candidates:
+            return True, 0.0, "zero_candidates_retrieved"
+
+        top_score = max((float(c.score) for c in candidates), default=0.0)
+        thresh = float(getattr(self.settings, "adaptive_replan_feedback_threshold", 0.40))
+
+        if top_score < thresh:
+            return True, top_score, f"low_relevance_score ({top_score:.3f} < {thresh:.3f})"
+
+        if len(candidates) >= 3:
+            spread = float(candidates[0].score) - float(candidates[-1].score)
+            if spread < 0.015 and top_score < 0.50:
+                return True, top_score, "flat_indistinguishable_candidates"
+
+        return False, top_score, "sufficient_retrieval"
+
+    async def _replan_retrieval(
+        self,
+        query: str,
+        transformed: dict[str, Any],
+        feedback_diagnosis: str,
+        tier: str,
+        retriever: Any,
+        reranker: Any,
+    ) -> tuple[list[RetrievalResult], str]:
+        """Diagnose retrieval failure mode and execute an adaptive re-planned search pass."""
+        logger.info(
+            "adaptive_rag.replan_retrieval_start",
+            diagnosis=feedback_diagnosis,
+            tier=tier,
+        )
+        try:
+            router_llm = get_sub_model_provider("router", tier)
+            prompt = (
+                f"ORIGINAL QUERY: {query}\n"
+                f"INITIAL SEARCH: {transformed.get('rewritten_query', query)}\n"
+                f"RETRIEVAL FEEDBACK DIAGNOSIS: {feedback_diagnosis}\n"
+                f"TASK: Formulate an adjusted, broader search query expanding technical synonyms."
+            )
+            raw = await asyncio.wait_for(
+                router_llm.classify(prompt, system_prompt=ADAPTIVE_REPLAN_PROMPT),
+                timeout=5.0,
+            )
+            data = json.loads(raw)
+            replanned_query = data.get("replanned_query", "").strip() or query
+        except Exception as e:
+            logger.warning("adaptive_rag.replan_llm_error", error=str(e))
+            replanned_query = f"{query} overview architecture concepts configuration"
+
+        try:
+            new_candidates = await retriever.retrieve(
+                replanned_query,
+                top_k=self.settings.retrieval_top_k,
+                expand_to_parents=True,
+            )
+            if new_candidates and reranker:
+                reranked = await asyncio.to_thread(
+                    reranker.rerank, query, new_candidates, self.settings.rerank_top_k
+                )
+                return reranked, "adaptive_replanned_reranked"
+            return new_candidates[:self.settings.rerank_top_k], "adaptive_replanned"
+        except Exception as e:
+            logger.warning("adaptive_rag.replan_execution_error", error=str(e))
+            return [], "replan_failed"
 
     def _compress_chunk(self, query: str, chunk: RetrievalResult) -> RetrievalResult:
         """Adaptive Hierarchical compression: extract query-relevant context or preserve tables/parents."""
@@ -701,6 +851,34 @@ class AdaptiveAdvancedRAGPipeline:
             retrieve_task, internet_task, pricing_task, calc_task
         )
         timings["multi_query_retrieve"] = round((time.perf_counter() - t0_r) * 1000, 2)
+
+        # Stage 2b — Retrieval Feedback & Re-planning (triggered on low relevance or zero candidates)
+        if getattr(self.settings, "enable_retrieval_feedback_replanning", True):
+            needs_replan, fb_score, fb_diagnosis = self._evaluate_retrieval_feedback(candidates, query, transformed)
+            if needs_replan:
+                logger.info(
+                    "adaptive_rag.retrieval_feedback_replan_triggered",
+                    feedback_score=fb_score,
+                    diagnosis=fb_diagnosis,
+                    tier=tier,
+                )
+                t0_replan = time.perf_counter()
+                replanned_candidates, replan_pass = await self._replan_retrieval(
+                    query=query,
+                    transformed=transformed,
+                    feedback_diagnosis=fb_diagnosis,
+                    tier=tier,
+                    retriever=retriever,
+                    reranker=reranker,
+                )
+                if replanned_candidates:
+                    seen_cids = {c.chunk_id for c in candidates}
+                    for c in replanned_candidates:
+                        if c.chunk_id not in seen_cids:
+                            seen_cids.add(c.chunk_id)
+                            candidates.append(c)
+                    fallback_pass = f"{fallback_pass}+{replan_pass}"
+                timings["retrieval_replan"] = round((time.perf_counter() - t0_replan) * 1000, 2)
 
         for chunk in candidates:
             m = chunk.metadata

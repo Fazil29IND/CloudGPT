@@ -346,6 +346,11 @@ Retrieval strategies:
 - "narrow": Specific service, CLI command, error code, or configuration property. Filtered retrieval.
 - "multi-hop": Multi-part question, cross-cloud comparison, or problem combining multiple distinct topics requiring multiple sub-queries.
 
+Retrieval modalities:
+- "dense": For abstract, conceptual, architectural designs and high-level reasoning.
+- "sparse": For exact CLI command syntax, error codes, specific flags, or exact API methods.
+- "hybrid": For queries needing both conceptual overview and specific implementation details.
+
 Rules:
 1. Output strictly valid JSON with no markdown fences, no explanatory text before or after.
 2. For "multi-hop", provide 1 to 3 distinct, self-contained sub_queries. For "broad" or "narrow", set sub_queries to [].
@@ -357,10 +362,13 @@ Output JSON schema:
   "intent": "explain | compare | cost_estimate | troubleshooting | architecture | error_fix | problem_solving | how_to | recent_info",
   "routes": ["RAG", "INTERNET"],
   "retrieval_strategy": "broad | narrow | multi-hop",
+  "retrieval_modality": "dense | sparse | hybrid",
   "sub_queries": ["sub query 1", "sub query 2"],
   "providers": ["aws", "gcp", "azure"],
   "needs_internet": true,
-  "confidence": 0.95
+  "confidence": 0.95,
+  "complexity_score": 0.85,
+  "decomposition_applied": true
 }
 
 Example output:
@@ -368,6 +376,7 @@ Example output:
   "intent": "compare",
   "routes": ["RAG", "INTERNET"],
   "retrieval_strategy": "multi-hop",
+  "retrieval_modality": "hybrid",
   "sub_queries": [
     "What are AWS EKS node pool configuration options?",
     "What are GKE node pool configuration options?",
@@ -375,7 +384,9 @@ Example output:
   ],
   "providers": ["aws", "gcp", "azure"],
   "needs_internet": false,
-  "confidence": 0.9
+  "confidence": 0.9,
+  "complexity_score": 0.85,
+  "decomposition_applied": true
 }
 """
 
@@ -458,4 +469,31 @@ REVISED ANSWER:
 
 Do NOT output any conversational preamble or explanation of changes.
 """
+
+
+AGENTIC_REFINE_PROMPT = """You are an expert retrieval refinement engine for a multi-cloud assistant.
+The initial retrieval pass did not yield sufficient high-confidence evidence to answer the user's query completely.
+Analyze the original query, the initial plan, and the missing knowledge, and formulate a single, targeted, highly specific follow-up query to retrieve the missing documentation.
+
+Output strictly valid JSON with no preamble or explanation:
+{
+  "refined_query": "specific targeted follow-up query",
+  "missing_aspect": "short description of the gap being filled",
+  "suggested_modality": "dense | sparse | hybrid"
+}
+"""
+
+
+ADAPTIVE_REPLAN_PROMPT = """You are an adaptive retrieval feedback and re-planning engine for a Cloud Infrastructure search system.
+The initial retrieval produced low-relevance candidates, sparse score dispersion, or vocabulary mismatch.
+Analyze the user query and the diagnosis feedback to formulate an adjusted search query and search strategy.
+
+Output strictly valid JSON with no preamble or explanation:
+{
+  "replanned_query": "adjusted search query with expanded technical synonyms",
+  "strategy_adjustment": "broaden_filter | deepen_probes | lexical_boost | alternative_service_angle",
+  "rationale": "short explanation of the adjustment"
+}
+"""
+
 
