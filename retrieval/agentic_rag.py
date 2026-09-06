@@ -427,8 +427,8 @@ class AgenticRAGPipeline:
                                 sq_sparse, top_k=self.settings.retrieval_top_k, filters=prov_filter_dict
                             )
                             d_res, s_res = await asyncio.gather(d_task, s_task, return_exceptions=True)
-                            d_list = d_res if isinstance(d_res, list) else []
-                            s_list = s_res if isinstance(s_res, list) else []
+                            d_list = [x for x in d_res if isinstance(x, RetrievalResult)] if isinstance(d_res, list) else []
+                            s_list = [x for x in s_res if isinstance(x, RetrievalResult)] if isinstance(s_res, list) else []
                             sq_merged: dict[str, RetrievalResult] = {}
                             for item in d_list:
                                 sq_merged[item.chunk_id] = item
@@ -515,8 +515,8 @@ class AgenticRAGPipeline:
                     )
                     dense_res, sparse_res = await asyncio.gather(dense_task, sparse_task, return_exceptions=True)
 
-                    d_list = dense_res if isinstance(dense_res, list) else []
-                    s_list = sparse_res if isinstance(sparse_res, list) else []
+                    d_list = [x for x in dense_res if isinstance(x, RetrievalResult)] if isinstance(dense_res, list) else []
+                    s_list = [x for x in sparse_res if isinstance(x, RetrievalResult)] if isinstance(sparse_res, list) else []
 
                     # RRF Fusion across dense and sparse
                     k_rrf = 60

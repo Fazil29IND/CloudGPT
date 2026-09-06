@@ -153,9 +153,23 @@ class HybridRetriever:
             target_namespaces = namespaces or ([namespace] if namespace else self._select_namespaces(filters))
             dense_weight, sparse_weight = self._get_effective_weights(q_ctx.original_query)
 
+            # Precompute query vector once across all target namespaces to avoid redundant embedding calls
+            query_vector = None
+            if hasattr(self.dense_retriever, "embedding_engine") and self.dense_retriever.embedding_engine:
+                try:
+                    query_vector = await self.dense_retriever.embedding_engine.embed_query(dense_search_text)
+                except Exception as emb_err:
+                    logger.warning("hybrid_retriever.precompute_embedding_failed", error=str(emb_err))
+
             # Concurrent fan-out across all target namespaces with per-namespace fault isolation
             dense_tasks = [
-                self.dense_retriever.retrieve(dense_search_text, top_k=top_k, filters=filters, namespace=ns)
+                self.dense_retriever.retrieve(
+                    dense_search_text,
+                    top_k=top_k,
+                    filters=filters,
+                    namespace=ns,
+                    vector_override=query_vector,
+                )
                 for ns in target_namespaces
             ]
             sparse_tasks = [
@@ -178,7 +192,9 @@ class HybridRetriever:
                 elif isinstance(batch, Exception):
                     logger.warning("dense_retrieval_namespace_error", namespace=ns, error=str(batch))
                 elif isinstance(batch, list):
-                    all_dense_batches.append(batch)
+                    clean_dense = [r for r in batch if isinstance(r, RetrievalResult)]
+                    if clean_dense:
+                        all_dense_batches.append(clean_dense)
 
             all_sparse_batches: list[list[RetrievalResult]] = []
             for idx, batch in enumerate(sparse_raw_batches):
@@ -190,7 +206,9 @@ class HybridRetriever:
                 elif isinstance(batch, Exception):
                     logger.warning("sparse_retrieval_namespace_error", namespace=ns, error=str(batch))
                 elif isinstance(batch, list):
-                    all_sparse_batches.append(batch)
+                    clean_sparse = [r for r in batch if isinstance(r, RetrievalResult)]
+                    if clean_sparse:
+                        all_sparse_batches.append(clean_sparse)
 
             # Flatten and deduplicate candidates within dense and sparse lists
             dense_candidates: dict[str, RetrievalResult] = {}

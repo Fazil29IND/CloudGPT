@@ -14,6 +14,9 @@ import csv
 import io
 import uuid
 import zipfile
+from collections import OrderedDict
+import threading
+import time
 from typing import Any
 
 import structlog
@@ -25,7 +28,66 @@ from core.redis_client import redis_client
 logger = structlog.get_logger(__name__)
 
 ATTACHMENT_KEY_PREFIX = "cloudgpt:attachment:"
-_MEMORY_STAGED: dict[str, dict[str, Any]] = {}
+
+
+class BoundedTTLCache:
+    """Thread-safe bounded in-memory cache with LRU eviction and TTL expiration."""
+
+    def __init__(self, maxsize: int = 200, default_ttl: float = 3600.0) -> None:
+        self._maxsize = maxsize
+        self._default_ttl = default_ttl
+        self._store: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def set(self, key: str, value: Any, ttl: float | None = None) -> None:
+        expiry = time.monotonic() + (ttl if ttl is not None else self._default_ttl)
+        with self._lock:
+            self._purge_expired_locked()
+            if key in self._store:
+                self._store.move_to_end(key)
+            elif len(self._store) >= self._maxsize:
+                self._store.popitem(last=False)
+            self._store[key] = (expiry, value)
+
+    def get(self, key: str, default: Any = None) -> Any | None:
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return default
+            expiry, value = entry
+            if time.monotonic() > expiry:
+                del self._store[key]
+                return default
+            self._store.move_to_end(key)
+            return value
+
+    def __getitem__(self, key: str) -> Any:
+        val = self.get(key)
+        if val is None:
+            raise KeyError(key)
+        return val
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.set(key, value)
+
+    def __contains__(self, key: str) -> bool:
+        return self.get(key) is not None
+
+    def pop(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            entry = self._store.pop(key, None)
+            if entry is None:
+                return default
+            return entry[1]
+
+    def _purge_expired_locked(self) -> None:
+        now = time.monotonic()
+        keys_to_del = [k for k, (exp, _) in self._store.items() if now > exp]
+        for k in keys_to_del:
+            del self._store[k]
+
+
+_MEMORY_STAGED = BoundedTTLCache(maxsize=200, default_ttl=3600.0)
 
 # Magic-byte signatures for sniffing declared content types (P-04 / security plan).
 _MAGIC_SIGNATURES: tuple[tuple[bytes, str], ...] = (
@@ -354,7 +416,7 @@ async def stage_attachment(
         "image_base64": image_base64,
         "raw_bytes_base64": raw_b64,
     }
-    _MEMORY_STAGED[attachment_id] = payload
+    _MEMORY_STAGED.set(attachment_id, payload, ttl=settings.attachment_ttl_seconds)
     stored = await redis_client.set_json(
         f"{ATTACHMENT_KEY_PREFIX}{attachment_id}",
         payload,
@@ -374,7 +436,10 @@ async def stage_attachment(
     }
 
 
-async def load_attachments_from_redis(attachments: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+async def load_attachments_from_redis(
+    attachments: list[dict[str, Any]] | None,
+    user_id: int | None = None,
+) -> list[dict[str, Any]] | None:
     """Resolve attachment_id references (from ChatRequest.attachments) to payloads."""
     if not attachments:
         return None
@@ -391,6 +456,18 @@ async def load_attachments_from_redis(attachments: list[dict[str, Any]] | None) 
         if not payload:
             logger.warning("Attachment %s not found or expired", attachment_id)
             continue
+
+        # IDOR enforcement: ensure attachment belongs to the requesting user
+        payload_owner = payload.get("user_id")
+        if user_id is not None and payload_owner is not None and payload_owner != user_id:
+            logger.warning(
+                "attachment_access_denied_idor",
+                attachment_id=attachment_id,
+                user_id=user_id,
+                payload_owner=payload_owner,
+            )
+            continue
+
         loaded.append({
             "attachment_id": attachment_id,
             "filename": payload.get("filename", "attachment"),

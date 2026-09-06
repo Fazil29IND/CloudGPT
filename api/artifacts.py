@@ -6,8 +6,11 @@ All downloads enforce session ownership and Content-Disposition: attachment head
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
+import os
+import urllib.parse
 import uuid
 from typing import Any
 
@@ -18,13 +21,14 @@ from starlette.responses import Response
 from config import get_settings
 from core.redis_client import redis_client
 from db import create_artifact_record, get_artifact_record, list_artifacts_for_session
+from file_processor import BoundedTTLCache
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/artifacts", tags=["artifacts"])
 
 ARTIFACT_HOT_KEY_PREFIX = "cloudgpt:artifact:"
-_MEMORY_ARTIFACTS: dict[str, bytes] = {}
+_MEMORY_ARTIFACTS = BoundedTTLCache(maxsize=200, default_ttl=86400.0)
 
 
 class CreateArtifactRequest(BaseModel):
@@ -56,14 +60,15 @@ async def create_artifact(payload: CreateArtifactRequest, request: Request) -> d
         raise HTTPException(status_code=400, detail="Invalid artifact content encoding")
 
     storage_key = f"{ARTIFACT_HOT_KEY_PREFIX}{uuid.uuid4()}"
-    _MEMORY_ARTIFACTS[storage_key] = raw_bytes
+    _MEMORY_ARTIFACTS.set(storage_key, raw_bytes, ttl=settings.attachment_ttl_seconds * 24)
 
     # Hot store in Redis with TTL
     if redis_client.is_available:
         await redis_client.set(storage_key, base64.b64encode(raw_bytes).decode("ascii"), ex=settings.attachment_ttl_seconds * 24)
 
-    # Durable store in DB
-    record = create_artifact_record(
+    # Durable store in DB (offloaded to threadpool)
+    record = await asyncio.to_thread(
+        create_artifact_record,
         user_id=user_id,
         session_id=payload.session_id,
         message_id=payload.message_id,
@@ -83,7 +88,7 @@ async def list_artifacts(session_id: str, request: Request) -> list[dict[str, An
     if not user_id:
         raise HTTPException(status_code=401, detail="Please sign in")
 
-    return list_artifacts_for_session(user_id, session_id)
+    return await asyncio.to_thread(list_artifacts_for_session, user_id, session_id)
 
 
 @router.get("/{artifact_id}/download")
@@ -93,7 +98,7 @@ async def download_artifact(artifact_id: str, request: Request) -> Response:
     if not user_id:
         raise HTTPException(status_code=401, detail="Please sign in")
 
-    record = get_artifact_record(artifact_id, user_id=user_id)
+    record = await asyncio.to_thread(get_artifact_record, artifact_id, user_id=user_id)
     if not record:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
@@ -116,9 +121,14 @@ async def download_artifact(artifact_id: str, request: Request) -> Response:
     if mime in ("text/html", "image/svg+xml", "application/xhtml+xml"):
         mime = "application/octet-stream"
 
-    filename = record["filename"]
+    raw_filename = record.get("filename") or f"artifact_{artifact_id}.bin"
+    # Sanitize against directory traversal, CRLF injection, and quotes
+    base_name = os.path.basename(raw_filename).replace("\r", "").replace("\n", "").replace('"', "")
+    safe_filename = base_name if base_name.strip() else f"artifact_{artifact_id}.bin"
+    encoded_filename = urllib.parse.quote(safe_filename, encoding="utf-8")
+
     headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Disposition": f'attachment; filename="{safe_filename}"; filename*=UTF-8\'\'{encoded_filename}',
         "Content-Type": mime,
     }
     return Response(content=raw_data, media_type=mime, headers=headers)

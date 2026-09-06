@@ -1807,13 +1807,16 @@ def _count_tokens(text: str) -> int:
         return len(text) // 4
 
 
-async def _load_attachment_texts(attachments: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
-    """Resolve attachment_id references from Redis into context-ready payloads."""
+async def _load_attachment_texts(
+    attachments: list[dict[str, Any]] | None,
+    user_id: int | None = None,
+) -> list[dict[str, Any]] | None:
+    """Resolve attachment_id references from Redis into context-ready payloads with user isolation."""
     if not attachments:
         return None
     try:
         from file_processor import load_attachments_from_redis
-        return await load_attachments_from_redis(attachments)
+        return await load_attachments_from_redis(attachments, user_id=user_id)
     except Exception as e:
         logger.warning("Failed to load attachments, continuing without them", error=str(e))
         return None
@@ -2037,7 +2040,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatResponse:
                         category=fact["category"],
                     )
 
-            attachment_texts = await _load_attachment_texts(payload.attachments)
+            attachment_texts = await _load_attachment_texts(payload.attachments, user_id=user_id)
 
             result = await execute_agent_pipeline(
                 query=payload.query,
@@ -2302,7 +2305,7 @@ async def chat_stream_endpoint(payload: ChatRequest, request: Request) -> Stream
                     )
                     await emit_event({"type": "memory_updated", "key": fact["key"], "value": fact["value"]})
 
-            attachment_texts = await _load_attachment_texts(payload.attachments)
+            attachment_texts = await _load_attachment_texts(payload.attachments, user_id=user_id)
 
             stream_start_time = time.monotonic()
             pipeline_task = asyncio.create_task(

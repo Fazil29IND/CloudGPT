@@ -113,10 +113,14 @@ class HNSWRetriever:
         filters: dict | None = None,
         namespace: str | None = None,
         expand_to_parents: bool = False,
+        vector_override: list[float] | None = None,
     ) -> list[RetrievalResult]:
         """Perform sub-millisecond HNSW vector search with graceful remote fallback."""
         try:
-            query_vector = await self.embedding_engine.embed_query(query)
+            if vector_override:
+                query_vector = vector_override
+            else:
+                query_vector = await self.embedding_engine.embed_query(query)
             if not query_vector:
                 return []
 
@@ -284,6 +288,7 @@ class DenseRetriever:
         filters: dict | None = None,
         namespace: str | None = None,
         expand_to_parents: bool = False,
+        vector_override: list[float] | None = None,
     ) -> list[RetrievalResult]:
         return await self.hnsw_retriever.retrieve(
             query=query,
@@ -291,4 +296,5 @@ class DenseRetriever:
             filters=filters,
             namespace=namespace,
             expand_to_parents=expand_to_parents,
+            vector_override=vector_override,
         )
