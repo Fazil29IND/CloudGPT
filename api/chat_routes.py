@@ -502,6 +502,9 @@ async def generate_with_fallback(
         llm = pipeline.get_main_llm(tier)
         if max_output_tokens is None:
             base_tokens = getattr(pipeline.settings, "chat_max_output_tokens", 4096)
+            _t_norm = (tier or "Free").strip().lower()
+            if _t_norm in ("max", "apex", "developer", "admin"):
+                base_tokens = max(base_tokens, 8192)
             if thinking_level:
                 from llm.thinking import profile_for
 

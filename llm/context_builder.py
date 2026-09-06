@@ -842,8 +842,9 @@ class ContextPipelineEngine:
             user_message_parts.append(
                 "\nAGENTIC ARCHITECTURE DIRECTIVES:\n"
                 "- Synthesize the evidence to resolve each planned sub-goal sequentially.\n"
-                "- Incorporate pricing and calculator data directly into cost trade-off analyses.\n"
+                "- Incorporate pricing and calculator data directly into cost trade-off analyses with explicit arithmetic.\n"
                 "- Provide complete, copy-pasteable Terraform, CLI, or IAM configurations without missing required attributes.\n"
+                "- Adapt response shape: For troubleshooting, provide Root Cause Analysis & Remediation; for implementation, provide Architecture, Prerequisites & Step-by-Step setup.\n"
                 "- Conclude with deterministic verification steps."
             )
             CONTEXT_BUILDS_BY_RAG_MODE_TOTAL.labels(rag_mode="agentic", tier=tier_normalized).inc()
@@ -852,6 +853,9 @@ class ContextPipelineEngine:
             user_message_parts.append(
                 "\nFRONTIER SYNTHESIS & CLAIM ATTRIBUTION DIRECTIVES:\n"
                 "- Deliver senior-architect level trade-off analysis balancing Security, Reliability, Performance, and Cost.\n"
+                "- Production-Grade IaC Mandate: All Terraform, Bicep, or K8s YAML must be complete, syntax-highlighted, and deployable. NEVER emit '# TODO' comments, placeholder stubs, or truncated blocks.\n"
+                "- Mermaid Diagram Quality: When producing architecture diagrams, ensure valid syntax and quote node labels containing special characters.\n"
+                "- Focused Blueprinting: If the query is single-cloud focused, concentrate deeply on that cloud's native primitives rather than padding unrequested provider columns.\n"
                 "- Explicitly cite verified evidence using claim anchors [Ref: chunk_id] throughout your architectural design.\n"
                 "- Contrast multi-cloud equivalents (AWS vs GCP vs Azure) highlighting specific service boundary differences.\n"
                 "- Back multi-region or hybrid recommendations with proven failover topologies and RTO/RPO limits."
@@ -900,6 +904,16 @@ class ContextPipelineEngine:
             constraints_block = "\n".join(constraints_parts)
             user_message_parts.append(constraints_block)
             section_tokens["instructions"] += estimate_tokens(constraints_block)
+
+        # Follow-up directive if multi-turn history exists
+        if chat_history and len(chat_history) > 1:
+            followup_block = (
+                "\nFOLLOW-UP CONVERSATIONAL DIRECTIVE:\n"
+                "- This is a follow-up request in an ongoing conversation. Answer the requested change or question directly.\n"
+                "- Do NOT re-introduce the overall scenario or repeat background information already established."
+            )
+            user_message_parts.append(followup_block)
+            section_tokens["instructions"] += estimate_tokens(followup_block)
 
         # ── 12. Recency Query Anchor (Attention Engineering) ──────────────────
         recency_line = f"\nCURRENT USER REQUEST: {query}"
