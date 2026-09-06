@@ -520,7 +520,11 @@ class ContextBuilder:
 
         # ── 7. User-Uploaded Attachments (Token-Capped Aggregate Pool) ─────────
         if attachment_texts:
-            has_dyn_expand = getattr(self.settings, "enable_dynamic_context_scaling", True) and tier_normalized in ("Pro", "Max", "Developer")
+            has_dyn_expand = (
+                getattr(self.settings, "enable_dynamic_context_scaling", True)
+                and tier_normalized in ("Pro", "Max", "Developer")
+                and effective_total_budget > tier_prompt_cap
+            )
             att_budget = budget.allocate("attachments", dynamic_expand=has_dyn_expand)
             att_remaining = att_budget
             att_lines = [
