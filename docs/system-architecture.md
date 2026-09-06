@@ -206,7 +206,7 @@ sequenceDiagram
         API->>SSE: stage: "analyzing"
         API->>Router: Classify intent & detect tool requirements
         Router-->>API: Intent (architecture / pricing / smalltalk)
-        
+      
         opt RAG Required
             API->>SSE: stage: "retrieving"
             API->>RAG: Hybrid Search (Dense 768d + BM25s + FlashRank)
@@ -256,42 +256,42 @@ stateDiagram-v2
     Analyzing --> Retrieving: Receive event: stage (retrieving)
     Retrieving --> Searching: Receive event: stage (searching)
     Searching --> Synthesizing: Receive event: stage (synthesizing)
-    
+  
     Synthesizing --> Thinking: Receive event: thinking_token
     Thinking --> Thinking: Receive event: thinking_token
     Thinking --> Streaming: Receive event: thinking_done
-    
+  
     Synthesizing --> Streaming: Receive event: token
     Streaming --> Streaming: Receive event: token
-    
+  
     Streaming --> Finalizing: Receive event: memory_updated
     Streaming --> Completed: Receive event: done
     Finalizing --> Completed: Receive event: done
-    
+  
     Connecting --> ErrorState: Receive event: error / 4xx / 5xx
     Analyzing --> ErrorState: Receive event: error
     Retrieving --> ErrorState: Receive event: error
     Synthesizing --> ErrorState: Receive event: error
     Thinking --> ErrorState: Receive event: error
     Streaming --> ErrorState: Receive event: error
-    
+  
     ErrorState --> Idle: User dismisses or retries
     Completed --> Idle: Message finalized & action bar mounted
 ```
 
 ### 4.2 SSE Event Catalog
 
-| Event Type | Emitted By | Payload Structure | Description |
-|---|---|---|---|
-| `stage` | Pipeline Orchestrator | `{"stage": "analyzing" \| "retrieving" \| "searching" \| "synthesizing"}` | Drives frontend step progression indicator |
-| `provider_detected` | Pipeline Orchestrator | `{"provider": "gemini"}` | Identifies active inference engine |
-| `session_title` | Auto-titler | `{"title": "EKS Auto-Scaling VPC Design"}` | Dynamically titles new conversations |
-| `thinking_token` | Gemini Provider | `{"token": "Evaluating ALB vs NLB trade-offs..."}` | Streams into collapsible thinking accordion |
-| `thinking_done` | Gemini Provider | `{}` | Closes the thinking stream; opens answer stream |
-| `token` | Gemini Provider | `{"token": "Architectural recommendation: ..."}` | Streams formatted Markdown tokens into UI |
-| `memory_updated` | Memory Manager | `{"key": "cloud_provider", "value": "AWS"}` | Signals durable architectural memory update |
-| `error` | Exception Handler | `{"error": "Quota exceeded", "code": 429}` | Renders actionable user-tier error notification |
-| `done` | Pipeline Finalizer | `{"usage": {...}, "sources": [...], "session_id": "..."}` | Completes turn, settles quota, mounts actions |
+| Event Type            | Emitted By            | Payload Structure                                                        | Description                                     |
+| --------------------- | --------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
+| `stage`             | Pipeline Orchestrator | `{"stage": "analyzing" \| "retrieving" \| "searching" \| "synthesizing"}` | Drives frontend step progression indicator      |
+| `provider_detected` | Pipeline Orchestrator | `{"provider": "gemini"}`                                               | Identifies active inference engine              |
+| `session_title`     | Auto-titler           | `{"title": "EKS Auto-Scaling VPC Design"}`                             | Dynamically titles new conversations            |
+| `thinking_token`    | Gemini Provider       | `{"token": "Evaluating ALB vs NLB trade-offs..."}`                     | Streams into collapsible thinking accordion     |
+| `thinking_done`     | Gemini Provider       | `{}`                                                                   | Closes the thinking stream; opens answer stream |
+| `token`             | Gemini Provider       | `{"token": "Architectural recommendation: ..."}`                       | Streams formatted Markdown tokens into UI       |
+| `memory_updated`    | Memory Manager        | `{"key": "cloud_provider", "value": "AWS"}`                            | Signals durable architectural memory update     |
+| `error`             | Exception Handler     | `{"error": "Quota exceeded", "code": 429}`                             | Renders actionable user-tier error notification |
+| `done`              | Pipeline Finalizer    | `{"usage": {...}, "sources": [...], "session_id": "..."}`              | Completes turn, settles quota, mounts actions   |
 
 ---
 
@@ -314,12 +314,12 @@ graph TD
     FreshInference -.->|Write Back| L3
 ```
 
-| Cache Layer | Mechanism | Key / Location | TTL | Eviction Policy | Purpose |
-|---|---|---|---|---|---|
-| **L1: Memory** | Python `OrderedDict` LRU | `core/memory_cache.py` | 5 minutes | Max 10,000 keys (LRU) | Sub-microsecond local process cache |
-| **L2: Key-Value** | Redis 7.2 Standalone | `cloudgpt:session:{id}`<br/>`cloudgpt:tool:{hash}` | 2 hours (Session)<br/>1 hour (Tool) | volatile-lru | Distributed multi-instance state & tool results |
-| **L3: Semantic** | Cosine Similarity (≥ 0.96) | `core/semantic_cache.py` | 24 hours | Periodic TTL expiry | Eliminates identical LLM re-computations |
-| **L4: Vector DB** | Pinecone Serverless | Namespaces: `v1`, `v2` | Persistent | Immutable versioned index | 768-dim dense index over 848 cloud services |
+| Cache Layer             | Mechanism                   | Key / Location                                | TTL                            | Eviction Policy           | Purpose                                         |
+| ----------------------- | --------------------------- | --------------------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------- |
+| **L1: Memory**    | Python`OrderedDict` LRU   | `core/memory_cache.py`                      | 5 minutes                      | Max 10,000 keys (LRU)     | Sub-microsecond local process cache             |
+| **L2: Key-Value** | Redis 7.2 Standalone        | `cloudgpt:session:{id}cloudgpt:tool:{hash}` | 2 hours (Session)1 hour (Tool) | volatile-lru              | Distributed multi-instance state & tool results |
+| **L3: Semantic**  | Cosine Similarity (≥ 0.96) | `core/semantic_cache.py`                    | 24 hours                       | Periodic TTL expiry       | Eliminates identical LLM re-computations        |
+| **L4: Vector DB** | Pinecone Serverless         | Namespaces:`v1`, `v2`                     | Persistent                     | Immutable versioned index | 768-dim dense index over 848 cloud services     |
 
 ---
 
@@ -367,12 +367,12 @@ sequenceDiagram
 
 ### 6.1 Plan Structure & Pricing Matrix (USD)
 
-| Plan Tier | Monthly Price | Annual Price | Model Access | Thinking Range | 5-Hour Token Budget | Weekly Token Budget |
-|---|---|---|---|---|---|---|
-| **Lite** | **$0** (Free) | **$0** | Lite (Gemini 3.8 Flash) | Low–High | 50,000 | 300,000 |
-| **Pro** | **$29 / mo** | **$290 / yr** | Core + Lite | Low–High | 250,000 | 2,000,000 |
-| **Max** | **$79 / mo** | **$790 / yr** | Apex + Core + Lite | Low–Max (~65k) | 500,000 | 15,000,000 |
-| **Developer** | Internal Bypass | Internal Bypass | Full Access | Low–Max (~65k) | 10,000,000 | Unlimited |
+| Plan Tier           | Monthly Price       | Annual Price        | Model Access            | Thinking Range  | 5-Hour Token Budget | Weekly Token Budget |
+| ------------------- | ------------------- | ------------------- | ----------------------- | --------------- | ------------------- | ------------------- |
+| **Lite**      | **$0** (Free) | **$0**        | Lite (Gemini 3.8 Flash) | Low–High       | 50,000              | 300,000             |
+| **Pro**       | **$29 / mo**  | **$290 / yr** | Core + Lite             | Low–High       | 250,000             | 2,000,000           |
+| **Max**       | **$79 / mo**  | **$790 / yr** | Apex + Core + Lite      | Low–Max (~65k) | 500,000             | 15,000,000          |
+| **Developer** | Internal Bypass     | Internal Bypass     | Full Access             | Low–Max (~65k) | 10,000,000          | Unlimited           |
 
 ---
 
@@ -385,21 +385,21 @@ graph TD
     Upload[User Upload: POST /api/upload] --> AuthCheck{Authenticated?}
     AuthCheck -->|No| HTTP401[HTTP 401 Unauthorized]
     AuthCheck -->|Yes| ExtensionCheck{Extension Allow-List}
-    
+  
     ExtensionCheck -->|Disallowed| HTTP400[HTTP 400 Disallowed Extension]
     ExtensionCheck -->|Allowed| SizeCheck{Size <= Tier Max Bytes?}
-    
+  
     SizeCheck -->|Oversized| HTTP413[HTTP 413 Payload Too Large]
     SizeCheck -->|Pass| MagicSniff{Magic-Byte Content Sniffing}
-    
+  
     MagicSniff -->|Spoofed MIME| HTTP400B[HTTP 400 File Content Mismatch]
     MagicSniff -->|Valid Binary| FileTypeSwitch{File Category}
-    
+  
     FileTypeSwitch -->|Image: PNG/JPG/WEBP| PillowSanitize[Pillow EXIF Strip + Resize <= 2048px]
     FileTypeSwitch -->|PDF Document| PyPDFExtract[PyPDF2 Extract + <= 200k Chars Cap]
     FileTypeSwitch -->|DOCX / XLSX| XMLSafeExtract[DefusedXML Office Text Extraction]
     FileTypeSwitch -->|Code / TXT / MD| UTF8Decode[UTF-8 Decode + Null-Byte Check]
-    
+  
     PillowSanitize & PyPDFExtract & XMLSafeExtract & UTF8Decode --> RedisStage[Stage in Redis: cloudgpt:attachment:uuid<br/>TTL = 3600 seconds]
     RedisStage --> ReturnMeta[Return attachment_id & staged metadata]
 ```
