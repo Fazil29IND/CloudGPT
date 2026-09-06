@@ -315,12 +315,13 @@ class Settings(BaseSettings):
 
     # ── Model Roles & Version Pinning ────────────────────────────────────────────
     # Sub-model used for structured-judgment tasks: query routing, evidence grading,
-    # query transformation, and title generation. Defaults to the lightest fallback
-    # so it is fast and cheap. Override in .env to pin a specific version.
+    # query transformation, and title generation. Follows the standard fallback
+    # cascade (3.8 -> 3.7 -> 3.6 -> 3.5 -> 3.5-flash-lite).
     gemini_model_sub: str = Field(
-        default="gemini-3.5-flash",
+        default="gemini-3.8-flash",
         description="Model for sub-model roles: router, grader, title, query-transform. "
-                    "Deliberately lighter than the generation models.",
+                    "Follows standard fallback chain (gemini-3.8-flash -> gemini-3.7-flash "
+                    "-> gemini-3.6-flash -> gemini-3.5-flash -> gemini-3.5-flash-lite).",
     )
 
     # Separate evaluator model for the self-critique / Answer Evaluator stage.

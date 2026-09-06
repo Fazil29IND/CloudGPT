@@ -15,6 +15,8 @@ def test_settings_gemini_model_names():
     assert s.gemini_model_fallback_1 == "gemini-3.7-flash"
     assert s.gemini_model_fallback_2 == "gemini-3.6-flash"
     assert s.gemini_model_fallback_3 == "gemini-3.5-flash"
+    assert s.gemini_model_safety_net == "gemini-3.5-flash-lite"
+    assert s.gemini_model_sub == "gemini-3.8-flash"
 
 
 def test_get_llm_provider_returns_gemini_for_all_tiers():
@@ -64,12 +66,28 @@ def test_sub_model_provider_equals_main():
     mock_settings.gemini_model_fallback_1 = "gemini-3.7-flash"
     mock_settings.gemini_model_fallback_2 = "gemini-3.6-flash"
     mock_settings.gemini_model_fallback_3 = "gemini-3.5-flash"
+    mock_settings.gemini_model_safety_net = "gemini-3.5-flash-lite"
     mock_settings.gemini_model = "gemini-3.8-flash"
+    mock_settings.gemini_model_sub = "gemini-3.8-flash"
 
     with patch("llm.provider.get_settings", return_value=mock_settings):
         for role in ("router", "summarizer", "verifier"):
             p = get_sub_model_provider(role, "Free")
             assert isinstance(p, GeminiProvider)
+            assert p.model_chain == [
+                "gemini-3.8-flash",
+                "gemini-3.7-flash",
+                "gemini-3.6-flash",
+                "gemini-3.5-flash",
+            ]
+            candidates = p._get_active_candidates()
+            assert candidates == [
+                "gemini-3.8-flash",
+                "gemini-3.7-flash",
+                "gemini-3.6-flash",
+                "gemini-3.5-flash",
+                "gemini-3.5-flash-lite",
+            ]
 
 
 def test_context_builder_with_internet_results():
@@ -295,6 +313,60 @@ async def test_full_cascade_reaches_35_flash_lite_safety_net():
         "gemini-3.5-flash-lite",
     ]
     assert provider.model == "gemini-3.5-flash-lite"
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestration_sub_model_full_cascade():
+    """Verify sub-models and agent orchestration cascade from 3.8 -> 3.7 -> 3.6 -> 3.5 -> 3.5 Lite."""
+    import llm.provider as provider_module
+    from types import SimpleNamespace
+
+    provider_module._model_cooldowns.clear()
+
+    mock_settings = MagicMock()
+    mock_settings.has_gemini = True
+    mock_settings.gemini_api_key = "mock"
+    mock_settings.gemini_model = "gemini-3.8-flash"
+    mock_settings.gemini_model_lite = "gemini-3.8-flash"
+    mock_settings.gemini_model_fallback_1 = "gemini-3.7-flash"
+    mock_settings.gemini_model_fallback_2 = "gemini-3.6-flash"
+    mock_settings.gemini_model_fallback_3 = "gemini-3.5-flash"
+    mock_settings.gemini_model_safety_net = "gemini-3.5-flash-lite"
+    mock_settings.gemini_model_sub = "gemini-3.8-flash"
+    mock_settings.gemini_first_chunk_timeout_seconds = 6.0
+    mock_settings.gemini_total_fallback_deadline_seconds = 25.0
+    mock_settings.gemini_request_timeout_seconds = 25.0
+    mock_settings.llm_stream_timeout_seconds = 120.0
+
+    with patch("llm.provider.get_settings", return_value=mock_settings):
+        provider = get_sub_model_provider("router", "Free")
+
+    attempted_models: list[str] = []
+
+    async def mock_generate_content(*args, **kwargs):
+        target_model = kwargs.get("model")
+        attempted_models.append(target_model)
+        if target_model != "gemini-3.5-flash-lite":
+            raise RuntimeError(f"503 Service Unavailable: {target_model} overloaded")
+        resp = SimpleNamespace(
+            text='{"intent": "general", "sub_queries": []}',
+            candidates=[SimpleNamespace(content=SimpleNamespace(parts=[SimpleNamespace(text='{"intent": "general"}', thought=False)]))],
+            usage_metadata=SimpleNamespace(total_token_count=10, prompt_token_count=5),
+        )
+        return resp
+
+    provider.client = MagicMock()
+    provider.client.aio.models.generate_content = AsyncMock(side_effect=mock_generate_content)
+
+    raw = await provider.classify("user query", '{"type": "json"}')
+    assert raw == '{"intent": "general", "sub_queries": []}'
+    assert attempted_models == [
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+    ]
 
 
 @pytest.mark.asyncio

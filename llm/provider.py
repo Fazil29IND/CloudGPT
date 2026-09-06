@@ -1180,16 +1180,24 @@ def get_llm_provider(role: str = "main", tier: str = "Free") -> LLMProvider:
 def get_sub_model_provider(role: str = "summarizer", tier: str = "Free") -> LLMProvider:
     """Return a GeminiProvider for sub-model roles (router, grader, title, transform).
 
-    Sub-model roles use gemini_model_sub (lighter and cheaper than the generation
-    models) with the same fallback chain. The role argument is kept for logging
-    and future per-role overrides.
+    Sub-models and agent orchestration components strictly follow the unified
+    5-model fallback cascade:
+        gemini-3.8-flash
+        → gemini-3.7-flash
+        → gemini-3.6-flash
+        → gemini-3.5-flash
+        → gemini-3.5-flash-lite (safety net)
     """
     settings = get_settings()
-    sub_primary = getattr(settings, "gemini_model_sub", settings.gemini_model_fallback_3)
+    sub_primary = getattr(settings, "gemini_model_sub", settings.gemini_model)
 
-    # Fallback chain for sub-model: sub_primary → fallback_2 → fallback_3
+    # Full fallback cascade for sub-model & agent orchestration:
+    # sub_primary (3.8) → fallback_1 (3.7) → fallback_2 (3.6) → fallback_3 (3.5)
+    # The terminal safety net (gemini-3.5-flash-lite) is automatically attached by
+    # GeminiProvider._get_active_candidates().
     chain_raw = [
         sub_primary,
+        settings.gemini_model_fallback_1,
         settings.gemini_model_fallback_2,
         settings.gemini_model_fallback_3,
     ]
@@ -1211,19 +1219,15 @@ def get_sub_model_provider(role: str = "summarizer", tier: str = "Free") -> LLMP
 def get_evaluator_provider(tier: str = "Free") -> LLMProvider:
     """Return a GeminiProvider for the Answer Evaluator (self-critique) stage.
 
-    Uses gemini_model_evaluator, which is deliberately different from the tier-
-    primary generation models to avoid self-preference bias in fact-checking.
-
-    Fallback chain: evaluator → sub_model → fallback_3 (lightest models only —
-    the evaluator does not need a powerful reasoning model, it needs a different
-    one from the generator).
+    Uses gemini_model_evaluator with full fallback chain down to gemini-3.5-flash-lite.
     """
     settings = get_settings()
     evaluator_primary = getattr(settings, "gemini_model_evaluator", settings.gemini_model_fallback_1)
 
     chain_raw = [
         evaluator_primary,
-        getattr(settings, "gemini_model_sub", settings.gemini_model_fallback_2),
+        settings.gemini_model_fallback_1,
+        settings.gemini_model_fallback_2,
         settings.gemini_model_fallback_3,
     ]
     seen: set[str] = set()
