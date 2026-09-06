@@ -437,6 +437,13 @@ class ContextPipelineEngine:
             else:
                 rag_remaining = budget.allocate("rag") if profile.name in ("lite", "agentic", "adaptive") else budget.remaining
 
+            # Evidence floor: when the system prompt and query have consumed
+            # most of a constrained budget, packing must still admit at least
+            # one (truncated) chunk — zero evidence makes grounded answers
+            # impossible and silently degrades answer quality.
+            if rag_results and rag_remaining < 240:
+                rag_remaining = 240
+
             packed_rag: list[dict[str, Any]] = []
             for result in rag_results:
                 content = result.get("content", "")
@@ -706,6 +713,13 @@ class ContextPipelineEngine:
                     expr = calc_results.get("expression") or calc_results.get("query", "")
                     res = calc_results.get("result") or calc_results.get("formatted", "")
                     cost_lines.append(f"- Calculation: {expr} = {res}")
+                if api_data:
+                    for a in api_data[:6]:
+                        prov = (a.get("provider") or "Cloud").upper()
+                        rtype = a.get("resource_type", "resource")
+                        cnt = a.get("count", 0)
+                        trunc = " (truncated)" if a.get("truncated") else ""
+                        cost_lines.append(f"- [{prov}] live {rtype}: {cnt} resource(s){trunc}")
                 cost_lines.append("</verified_cost_data>")
                 cost_block = "\n".join(cost_lines)
                 user_message_parts.append(cost_block)
@@ -730,6 +744,15 @@ class ContextPipelineEngine:
                     expr = calc_results.get("expression") or calc_results.get("query", "")
                     res = calc_results.get("result") or calc_results.get("formatted", "")
                     tool_lines.append(f"  - Equation: {expr} = {res}")
+                    tool_lines.append("</tool_result>")
+                if api_data:
+                    tool_lines.append('<tool_result name="cloud_resources">')
+                    for a in api_data:
+                        prov = (a.get("provider") or "Cloud").upper()
+                        rtype = a.get("resource_type", "resource")
+                        cnt = a.get("count", 0)
+                        trunc = " (truncated)" if a.get("truncated") else ""
+                        tool_lines.append(f"  - [{prov}] live {rtype}: {cnt} resource(s){trunc}")
                     tool_lines.append("</tool_result>")
                 tool_lines.append("</cloud_tool_executions>")
                 tool_block = "\n".join(tool_lines)

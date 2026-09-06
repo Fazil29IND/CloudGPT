@@ -62,6 +62,18 @@ class Settings(BaseSettings):
         le=100,
         description="Maximum total connections in PostgreSQL ThreadedConnectionPool",
     )
+    db_statement_timeout_ms: int = Field(
+        default=30000,
+        ge=1000,
+        le=600000,
+        description="Server-side statement_timeout in ms — runaway queries are cancelled",
+    )
+    db_idle_in_transaction_timeout_ms: int = Field(
+        default=15000,
+        ge=1000,
+        le=600000,
+        description="Server-side idle_in_transaction_session_timeout in ms — abandoned open transactions are rolled back",
+    )
     redis_url: str = Field(
         default="redis://localhost:6379/0",
         description="Redis connection URI for caching and temporary data",

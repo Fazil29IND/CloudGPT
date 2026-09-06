@@ -1,15 +1,24 @@
 """
-Comprehensive Acceptance Report Generator for CloudGPT RAG & Cache Architecture.
+Acceptance Report Generator for CloudGPT RAG & Cache Architecture.
 
 Runs acceptance verification and generates evaluation/ACCEPTANCE_REPORT.md.
+
+Honesty contract of this report:
+- Every gate status is computed from `evaluation/acceptance_check.run_acceptance_checks()`.
+- No performance number is hardcoded. The alpha matrix lists *configured
+  weights and the workloads they target*; measured recall only appears when
+  this script is run with `--with-retrieval-eval` against a live index.
+- Latency figures list *configured budgets* only; measured gates live in
+  tests/load/test_latency_gates.py (p95 budget enforced in CI).
+- The task list is an implementation record, not a verification claim.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -20,22 +29,30 @@ from config import get_settings
 from evaluation.acceptance_check import run_acceptance_checks
 
 
-async def generate_report() -> str:
+async def _run_retrieval_eval() -> list[dict] | None:
+    """Optionally measure real recall@10 against the live index."""
+    try:
+        from evaluation.retrieval_eval import evaluate_alphas
+
+        return await evaluate_alphas()
+    except Exception as exc:
+        print(f"Retrieval evaluation unavailable ({exc}); omitting measured recall.")
+        return None
+
+
+async def generate_report(with_retrieval_eval: bool = False) -> str:
     settings = get_settings()
     acceptance_results = await run_acceptance_checks()
 
-    # Load baseline snapshot if present
-    snapshot_path = BASE_DIR / "evaluation" / "baseline_snapshot.json"
-    snapshot_data = {}
-    if snapshot_path.exists():
-        try:
-            with open(snapshot_path, "r", encoding="utf-8") as f:
-                snapshot_data = json.load(f)
-        except Exception:
-            pass
+    total_gates = len(acceptance_results)
+    passed_gates = sum(1 for passed in acceptance_results.values() if passed)
+
+    eval_metrics: list[dict] | None = None
+    if with_retrieval_eval:
+        eval_metrics = await _run_retrieval_eval()
 
     report_lines = [
-        "# CloudGPT RAG & Cache Architecture — Final Acceptance Report",
+        "# CloudGPT RAG & Cache Architecture — Acceptance Report",
         "",
         f"**Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%SZ')}  ",
         f"**Active Corpus Version:** `{getattr(settings, 'active_corpus_version', 'v1')}`  ",
@@ -43,11 +60,15 @@ async def generate_report() -> str:
         f"**Embedding Model:** `{settings.embedding_model}` (Dimension: {settings.embedding_dimension})  ",
         f"**BM25 Lexical Engine:** `BM25S (Robertson)`  ",
         "",
+        "> **How to read this report:** gate statuses are computed from automated",
+        "> checks at generation time. The checks are structural/unit-level — they",
+        "> do not constitute production verification. Performance sections list",
+        "> configured budgets; measured figures are only shown when explicitly",
+        "> evaluated with live dependencies.",
+        "",
         "---",
         "",
-        "## 1. Executive Summary & Verification Gates",
-        "",
-        "All 20 engineering tasks spanning **Phase 0 through Phase 5** have been implemented, tested, and validated against the production specification.",
+        f"## 1. Verification Gates — {passed_gates}/{total_gates} passed",
         "",
         "| Gate / Component | Status | Verification Criteria |",
         "| :--- | :--- | :--- |",
@@ -86,50 +107,80 @@ async def generate_report() -> str:
         "",
         "---",
         "",
-        "## 3. Retrieval Alpha Optimization Matrix",
+        "## 3. Retrieval Alpha Configuration Matrix",
         "",
-        "| Alpha (Dense Weight) | Sparse Weight (BM25S) | Target Workload | Expected Recall@10 | Expected Precision@5 |",
-        "| :--- | :--- | :--- | :--- | :--- |",
-        "| **0.30** | 0.70 | CLI flags, Status codes, Errors, Exact identifiers | 94.2% | 88.5% |",
-        "| **0.50** | 0.50 | Balanced conceptual comparison | 91.8% | 85.0% |",
-        "| **0.70** | 0.30 | Broad architectural questions & explanations | 93.6% | 86.4% |",
-        "",
-        "---",
-        "",
-        "## 4. Latency Budget Performance Targets",
-        "",
-        "| Stage | Configured Budget | Fast-Path Latency | Fallback Mechanism |",
+        "| Alpha (Dense Weight) | Sparse Weight (BM25S) | Target Workload | Measured Recall@10 |",
         "| :--- | :--- | :--- | :--- |",
-        "| Query Classification | 300 ms | ~15 ms (Cache) / ~120 ms | Rule-based regex router |",
-        "| Hybrid Vector Retrieval | 300 ms | 0 ms (Cache) / ~85 ms | Pass 2 / Pass 3 global search |",
-        "| Reranking (BGE) | 400 ms | 0 ms (Cache) / ~110 ms | Top-k truncation |",
-        "| Web Search (Freshness Gated) | 2000 ms | Skipped for non-fresh queries | DuckDuckGo fallback / RAG only |",
-        "| Context Assembly | 50 ms | ~3 ms | Direct template injection |",
+    ])
+
+    alpha_targets = [
+        (0.30, 0.70, "CLI flags, Status codes, Errors, Exact identifiers"),
+        (0.50, 0.50, "Balanced conceptual comparison"),
+        (0.70, 0.30, "Broad architectural questions & explanations"),
+    ]
+    measured_by_alpha: dict[float, dict] = {}
+    if eval_metrics:
+        for m in eval_metrics:
+            measured_by_alpha[float(m.get("alpha", -1))] = m
+
+    for alpha, sparse, workload in alpha_targets:
+        m = measured_by_alpha.get(alpha)
+        measured = f"{m['recall_at_10']:.1f}%" if m and isinstance(m.get("recall_at_10"), (int, float)) else "not measured — run `--with-retrieval-eval`"
+        report_lines.append(f"| **{alpha:.2f}** | {sparse:.2f} | {workload} | {measured} |")
+
+    report_lines.extend([
         "",
         "---",
         "",
-        "## 5. Phase 0 – Phase 5 Task Checklist",
+        "## 4. Latency Budgets (Configured Targets)",
         "",
-        "- [x] **Task 1:** Per-Stage Latency Histograms & Telemetry",
-        "- [x] **Task 2:** Corpus & Baseline Snapshot Tool",
-        "- [x] **Task 3:** Freshness-Gated Internet Search",
-        "- [x] **Task 4:** 3-Layer Versioned Redis Cache Schema",
-        "- [x] **Task 5:** Single-Flight Distributed Lock with Jitter",
-        "- [x] **Task 6:** Metadata Pre-Filter 3-Pass Fallback Sequence",
-        "- [x] **Task 7:** Async HTTP Document Fetcher with Rate Limiting",
-        "- [x] **Task 8:** Provider-Specific HTML to Markdown Normalizer",
-        "- [x] **Task 9:** Token-Budgeted Parent-Child Chunker",
-        "- [x] **Task 10:** Versioned Namespace Ingestion & Atomic Promotion CLI",
-        "- [x] **Task 11:** BM25S Lexical Vector Sparse Retrieval Indexing",
-        "- [x] **Task 12:** Multi-Namespace Fan-Out & Canonical URL Deduplication",
-        "- [x] **Task 13:** 30-Question Golden Evaluation Set & Alpha Tuning",
-        "- [x] **Task 14:** Retrieval Result Caching Layer",
-        "- [x] **Task 15:** Negative Result Short-Lived Caching (30s TTL)",
-        "- [x] **Task 16:** Redis Telemetry Grafana Dashboard & Prometheus Alerts",
-        "- [x] **Task 17:** End-to-End Latency Budget Enforcement",
-        "- [x] **Task 18:** Ingestion Dead-Letter Queue Tracking & Replay CLI",
-        "- [x] **Task 19:** Automated Latency Gate & Performance Test Suite",
-        "- [x] **Task 20:** Final Acceptance Verification & Report Generation",
+        "Enforced in CI by `tests/load/test_latency_gates.py` (in-process p95 gate).",
+        "Live per-stage latency is observable via Prometheus `rag_stage_duration_seconds`.",
+        "",
+        "| Stage | Configured Budget | Fallback Mechanism |",
+        "| :--- | :--- | :--- |",
+        "| Query Classification | 300 ms | Rule-based regex router |",
+        "| Hybrid Vector Retrieval | 300 ms | Pass 2 / Pass 3 global search |",
+        "| Reranking (BGE) | 400 ms | Top-k truncation |",
+        "| Web Search (Freshness Gated) | 2000 ms | DuckDuckGo fallback / RAG only |",
+        "| Context Assembly | 50 ms | Direct template injection |",
+        "",
+        "---",
+        "",
+        "## 5. Implementation Record (Phase 0 – Phase 5)",
+        "",
+        "Delivered engineering work items. This is a scope record, **not** a",
+        "verification claim — verification status is defined exclusively by the",
+        "gate table in section 1 and the test suite.",
+        "",
+        "- Per-Stage Latency Histograms & Telemetry",
+        "- Corpus & Baseline Snapshot Tool",
+        "- Freshness-Gated Internet Search",
+        "- 3-Layer Versioned Redis Cache Schema",
+        "- Single-Flight Distributed Lock with Jitter",
+        "- Metadata Pre-Filter 3-Pass Fallback Sequence",
+        "- Async HTTP Document Fetcher with Rate Limiting",
+        "- Provider-Specific HTML to Markdown Normalizer",
+        "- Token-Budgeted Parent-Child Chunker",
+        "- Versioned Namespace Ingestion & Atomic Promotion CLI",
+        "- BM25S Lexical Vector Sparse Retrieval Indexing",
+        "- Multi-Namespace Fan-Out & Canonical URL Deduplication",
+        "- Golden Evaluation Set & Alpha Tuning",
+        "- Retrieval Result Caching Layer",
+        "- Negative Result Short-Lived Caching (30s TTL)",
+        "- Redis Telemetry Grafana Dashboard & Prometheus Alerts",
+        "- End-to-End Latency Budget Enforcement",
+        "- Ingestion Dead-Letter Queue Tracking & Replay CLI",
+        "- Automated Latency Gate & Performance Test Suite",
+        "- Acceptance Verification & Report Generation (this document)",
+        "",
+        "---",
+        "",
+        "## 6. Implementation Status Taxonomy",
+        "",
+        "Subsystem-level status lives in `docs/IMPLEMENTATION_STATUS.md` using the",
+        "five-level scale: Architecture Only → Mock → Implemented → Tested →",
+        "Production Verified.",
         "",
     ])
 
@@ -141,7 +192,14 @@ async def generate_report() -> str:
 
 
 def main() -> None:
-    asyncio.run(generate_report())
+    parser = argparse.ArgumentParser(description="CloudGPT acceptance report generator")
+    parser.add_argument(
+        "--with-retrieval-eval",
+        action="store_true",
+        help="Measure real recall@10 against the live index (requires credentials)",
+    )
+    args = parser.parse_args()
+    asyncio.run(generate_report(with_retrieval_eval=args.with_retrieval_eval))
 
 
 if __name__ == "__main__":

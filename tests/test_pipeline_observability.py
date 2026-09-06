@@ -74,6 +74,7 @@ def _patched_gather(monkeypatch, classification, citation_mgr=None):
             [],
             [],
             [],
+            [],  # api_data
             None,
             citation_mgr or CitationManager(),
             {"classification": 10.0, "retrieval": 15.0},

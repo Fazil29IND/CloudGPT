@@ -747,6 +747,7 @@ async def _gather_pipeline_context(
     web_results: list[dict[str, Any]] = []
     internet_results: list[dict[str, Any]] = []
     pricing_data: list[dict[str, Any]] = []
+    api_data: list[dict[str, Any]] = []
     calc_results: dict[str, Any] | None = None
 
     # 2. Parallel, Fault-Isolated Context Gathering with return_exceptions=True
@@ -1042,12 +1043,74 @@ async def _gather_pipeline_context(
             logger.warning("Web search tool execution error", error=str(e))
         return results
 
+    async def _safe_cloud_resources() -> list[dict[str, Any]]:
+        """Live resource inventory via the cloud SDK tools.
+
+        Gated: runs only when the router classified the query as live_resource
+        AND the corresponding provider credentials exist. Without credentials
+        the tools raise internally and return [] — nothing is ever fabricated."""
+        results: list[dict[str, Any]] = []
+        try:
+            cls_dump = (
+                classification.model_dump()
+                if hasattr(classification, "model_dump")
+                else (classification or {})
+            )
+            if not isinstance(cls_dump, dict) or cls_dump.get("intent") != "live_resource":
+                return results
+            cls_providers = [str(p).lower() for p in (cls_dump.get("providers") or [])]
+
+            tasks: list[Any] = []
+            labels: list[str] = []
+
+            def _add(coro: Any, label: str) -> None:
+                tasks.append(asyncio.wait_for(coro, timeout=8.0))
+                labels.append(label)
+
+            def _wants(provider: str) -> bool:
+                return not cls_providers or provider in cls_providers or "all" in cls_providers
+
+            if pipeline.aws_tools.has_credentials and _wants("aws"):
+                _add(pipeline.aws_tools.list_ec2_instances(), "aws:ec2")
+                _add(pipeline.aws_tools.list_s3_buckets(), "aws:s3")
+                _add(pipeline.aws_tools.list_lambda_functions(), "aws:lambda")
+                _add(pipeline.aws_tools.list_rds_instances(), "aws:rds")
+            if pipeline.gcp_tools.has_credentials and _wants("gcp"):
+                _add(pipeline.gcp_tools.list_compute_instances(), "gcp:compute")
+                _add(pipeline.gcp_tools.list_storage_buckets(), "gcp:storage")
+            if pipeline.azure_tools.has_credentials and _wants("azure"):
+                _add(pipeline.azure_tools.list_virtual_machines(), "azure:vm")
+                _add(pipeline.azure_tools.list_storage_accounts(), "azure:storage")
+
+            if not tasks:
+                return results
+
+            raw = await asyncio.gather(*tasks, return_exceptions=True)
+            for label, item in zip(labels, raw):
+                if isinstance(item, BaseException) or not item:
+                    continue
+                provider_name, resource_type = label.split(":", 1)
+                shown = list(item)[:10]  # cap context size; count stays truthful
+                results.append({
+                    "provider": provider_name.upper(),
+                    "resource_type": resource_type,
+                    "count": len(item),
+                    "truncated": len(item) > len(shown),
+                    "resources": shown,
+                })
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("cloud_resources_execution_error", error=str(e))
+        return results
+
     # Run context gathering with complete isolation and partial failure resilience
     gather_results = await asyncio.gather(
         _safe_internet(),
         _safe_rag(),
         _safe_pricing(),
         _safe_web(),
+        _safe_cloud_resources(),
         return_exceptions=True,
     )
 
@@ -1069,11 +1132,13 @@ async def _gather_pipeline_context(
     rag_items, rag_fallback = gather_results[1] if not isinstance(gather_results[1], BaseException) else ([], "error_fallback")
     pricing_items = gather_results[2] if not isinstance(gather_results[2], BaseException) else []
     web_items = gather_results[3] if not isinstance(gather_results[3], BaseException) else []
+    cloud_resource_items = gather_results[4] if not isinstance(gather_results[4], BaseException) else []
 
     internet_results.extend(internet_items)
     rag_results.extend(rag_items)
     fallback_pass = rag_fallback
     pricing_data.extend(pricing_items)
+    api_data = cloud_resource_items
 
     # Register citations deterministically (chunk_id links sources to the
     # retrieval chunk for claim-level source-to-chunk attribution)
@@ -1121,6 +1186,7 @@ async def _gather_pipeline_context(
         web_results,
         internet_results,
         pricing_data,
+        api_data,
         calc_results,
         citation_mgr,
         timings,
@@ -1198,6 +1264,7 @@ def _build_pipeline_messages(
     calc_results: dict[str, Any] | None,
     provider_filter: str | None,
     chat_history: list[dict] | None,
+    api_data: list[dict[str, Any]] | None = None,
     attachment_texts: list[dict[str, Any]] | None = None,
     max_context_tokens: int | None = None,
     session_summary: str | None = None,
@@ -1546,6 +1613,7 @@ async def execute_agent_pipeline(
             web_results,
             internet_results,
             pricing_data,
+            api_data,
             calc_results,
             citation_mgr,
             stage_timings,
@@ -1593,6 +1661,7 @@ async def execute_agent_pipeline(
         web_results=web_results,
         internet_results=internet_results,
         pricing_data=pricing_data,
+        api_data=api_data,
         calc_results=calc_results,
         provider_filter=provider_filter,
         chat_history=chat_history,

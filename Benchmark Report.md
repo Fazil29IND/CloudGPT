@@ -1,5 +1,16 @@
 # CloudGPT Comprehensive Benchmark Report: Beginner to Expert
 
+> ⚠️ **VERIFICATION STATUS (2026-09-06 audit):** This report was produced as a
+> target-vs-checklist summary and contains figures that were **not measured by
+> a stored run**. Known corrections:
+> - Row 1 cites `tests/test_config.py` / `tests/test_query_router.py`, which **do not exist** in the repo.
+> - Row 5's "< 20 ms SLA / 2.4 ms" is not the enforced gate — the CI latency gate is p95 < 800 ms measured in-process (`tests/load/test_latency_gates.py`).
+> - Row 3's "Zero LLM token bypass" is false: `run_smalltalk_pipeline` makes a real LLM call with a small system prompt (`api/chat_routes.py`).
+> - Row 13's Recall@10 figures were originally *expected* targets in `BenchMarks/Benchmark Report.md`, republished here as measured; `evaluation/retrieval_eval.py` computes a keyword-coverage proxy, not true recall.
+>
+> For trustworthy status, see `docs/IMPLEMENTATION_STATUS.md` and regenerate
+> `evaluation/ACCEPTANCE_REPORT.md` (now computed from real gate results).
+
 **System:** CloudGPT Enterprise Research & Support Assistant  
 **Date:** September 5, 2026  
 **Corpus Version:** `v2` (848 Cloud Services Across 27 Categories)  

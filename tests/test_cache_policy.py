@@ -447,15 +447,18 @@ async def test_retrieval_cache_auto_serialization_and_l1_fallback():
 
 @pytest.mark.asyncio
 async def test_tool_cache_l1_in_process_fallback():
-    """Verify tool_cache stores and reads from L1 memory cache when Redis is absent."""
+    """Verify tool_cache stores and reads from L1 memory cache when Redis is absent.
+
+    With no durable layer available the write is reported as False (honest
+    status), but the L1 write still succeeds and reads back correctly."""
     params = {"q": "ec2 m5.large", "providers": "aws"}
     result_data = [{"service": "AmazonEC2", "pricePerHour": 0.096}]
 
-    # Set tool cache
+    # Set tool cache — L1-only, so the durable write is reported as not done
     written = await set_cached_tool_result("cloud_pricing", params, result_data, ttl_seconds=60)
-    assert written is True
+    assert written is False
 
-    # Get tool cache
+    # Get tool cache — L1 read-back still works
     read_data = await get_cached_tool_result("cloud_pricing", params)
     assert read_data == result_data
 

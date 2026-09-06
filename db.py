@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import psycopg2
 import psycopg2.pool
 import psycopg2.extras
+import psycopg2.extensions
 import bcrypt
 from config import get_settings
 from core.entitlements import Entitlements, normalize_plan
@@ -52,16 +53,56 @@ def get_pool():
     if _pool is None or _pool.closed:
         min_conn = getattr(settings, "db_pool_min_conn", 2)
         max_conn = getattr(settings, "db_pool_max_conn", 30)
+        statement_ms = int(getattr(settings, "db_statement_timeout_ms", 30000))
+        idle_txn_ms = int(getattr(settings, "db_idle_in_transaction_timeout_ms", 15000))
+        # Server-side guards: a runaway query cannot outlive statement_timeout,
+        # and an abandoned open transaction cannot hold locks/idle snapshots
+        # forever (the classic "too many connections" production failure).
+        options = (
+            f"-c statement_timeout={statement_ms}"
+            f" -c idle_in_transaction_session_timeout={idle_txn_ms}"
+            " -c lock_timeout=10000"
+        )
         _pool = psycopg2.pool.ThreadedConnectionPool(
-            min_conn, max_conn, DATABASE_URL, options="-c statement_timeout=30000"
+            min_conn, max_conn, DATABASE_URL, options=options
         )
     return _pool
 
 
-def get_connection():
-    """Get a connection from the pool."""
+def _connection_healthy(conn) -> bool:
+    """Cheap liveness probe for a pooled connection (catches connections killed
+    by Postgres restarts, firewalls, or idle timeouts)."""
+    if conn is None or conn.closed:
+        return False
     try:
-        return get_pool().getconn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except Exception:
+        return False
+
+
+def get_connection():
+    """Get a healthy connection from the pool, discarding stale ones.
+
+    Pooled connections can die underneath the pool (server restart, NAT idle
+    drop). Handing those out surfaces as random 'connection reset' 500s, so
+    each checkout is validated and dead connections are replaced once."""
+    pool = get_pool()
+    conn = None
+    try:
+        for attempt in range(2):
+            conn = pool.getconn()
+            if _connection_healthy(conn):
+                return conn
+            # Stale: discard this socket and take a fresh one.
+            try:
+                pool.putconn(conn, close=True)
+            except Exception:
+                pass
+            conn = None
+        raise DatabaseUnavailableError("Database connections are unhealthy")
     except psycopg2.pool.PoolError as exc:
         logger.error("db_pool_exhausted: %s", exc)
         DB_POOL_EXHAUSTED_TOTAL.inc()
@@ -69,7 +110,15 @@ def get_connection():
 
 
 def put_connection(conn):
-    """Return a connection to the pool."""
+    """Return a connection to the pool, cleaning up any uncommitted transaction
+    so an aborted state never leaks to the next borrower."""
+    try:
+        if conn is not None and not conn.closed and conn.status != psycopg2.extensions.STATUS_READY:
+            conn.rollback()
+    except Exception:
+        # Dead socket — returning it is still safe: the next checkout
+        # pre-pings it and discards it if it fails the probe.
+        pass
     get_pool().putconn(conn)
 
 

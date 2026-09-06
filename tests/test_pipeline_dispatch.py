@@ -20,6 +20,7 @@ async def test_free_tier_uses_current_rag_path():
         [],
         [],
         [],
+        [],  # api_data
         None,
         MagicMock(get_sources=lambda: []),
         {"classification": 10.0},

@@ -76,12 +76,35 @@ def test_default_thinking_for_tier():
     from llm.thinking import default_thinking_for_tier
     assert default_thinking_for_tier("Free") == "Low"
     assert default_thinking_for_tier("Lite") == "Low"
-    assert default_thinking_for_tier("Pro") == "Medium"
-    assert default_thinking_for_tier("Core") == "Medium"
-    assert default_thinking_for_tier("Max") == "High"
-    assert default_thinking_for_tier("Apex") == "High"
-    assert default_thinking_for_tier("Developer") == "High"
-    assert default_thinking_for_tier("admin") == "High"
+    assert default_thinking_for_tier("Pro") == "High"
+    assert default_thinking_for_tier("Core") == "High"
+    assert default_thinking_for_tier("Max") == "Max"
+    assert default_thinking_for_tier("Apex") == "Max"
+    assert default_thinking_for_tier("Developer") == "Max"
+    assert default_thinking_for_tier("admin") == "Max"
+
+
+def test_tier_thinking_defaults_survive_entitlement_clamping():
+    """The tier defaults must survive the entitlement clamp so Apex actually
+    gets Max reasoning, Core gets High, and Lite stays fast — while users
+    still cannot escalate beyond their tier's ceiling."""
+    from core.entitlements import get_allowed_thinking_for_model
+    from llm.thinking import default_thinking_for_tier, clamp_thinking_level
+
+    for tier, model, mode in (
+        ("Lite", "Lite", "Free"),
+        ("Core", "Core", "Pro"),
+        ("Apex", "Apex", "Max"),
+    ):
+        allowed = get_allowed_thinking_for_model(tier, model)
+        default_lvl = default_thinking_for_tier(mode)
+        effective = clamp_thinking_level(default_lvl, allowed)
+        assert effective == default_lvl, (
+            f"{tier} default '{default_lvl}' was clamped away by entitlements {allowed}"
+        )
+    # Escalation is still blocked: a Lite user cannot reach Max.
+    assert clamp_thinking_level("Max", get_allowed_thinking_for_model("Lite", "Lite")) == "High"
+    assert clamp_thinking_level("Max", get_allowed_thinking_for_model("Core", "Core")) == "High"
 
 
 def test_clamp_thinking_level_per_tier():

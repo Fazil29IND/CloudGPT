@@ -77,15 +77,18 @@ class ThinkingProfile:
 def default_thinking_for_tier(tier: str | None) -> str:
     """Return the default thinking level for a tier.
 
-    Free  → Low    (2 048 tokens  — fast, lightweight)
-    Pro   → Medium (8 192 tokens  — structured reasoning)
-    Max   → High   (24 576 tokens — deep multi-step reasoning)
+    Defaults are set so the tiers feel meaningfully different out of the box:
+    Free/Lite → Low    (2 048 tokens  — Flash-class speed, lightweight)
+    Pro/Core  → High   (24 576 tokens — deep structured reasoning)
+    Max/Apex  → Max    (65 535 tokens — maximum reasoning budget)
+    Users can still request lower levels; higher ones are clamped by
+    entitlements (Lite/Core cannot select Max).
     """
     t = (tier or "free").strip().lower()
     if t in ("max", "apex", "developer", "admin"):
-        return HIGH
+        return MAX
     if t in ("pro", "core"):
-        return MEDIUM
+        return HIGH
     return LOW
 
 
