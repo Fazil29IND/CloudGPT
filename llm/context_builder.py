@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -16,16 +15,12 @@ from .context_safety import ContextSafetyGuard
 from .context_types import (
     ContextBuildResult,
     ContextProfile,
-    OrderingStrategy,
     ProvenanceRecord,
     WorkingMemoryState,
 )
 from .evidence_ordering import EvidenceOrderingManager
 from .system_prompts import (
-    APEX_TIER_SYSTEM_PROMPT,
     COMPARISON_FORMAT,
-    CORE_TIER_SYSTEM_PROMPT,
-    LITE_TIER_SYSTEM_PROMPT,
     PRICING_FORMAT,
     TROUBLESHOOTING_FORMAT,
     get_system_prompt_for_tier,
@@ -966,6 +961,10 @@ class ContextPipelineEngine:
             tokens_used=total_tokens_used,
             safety_passed=safety_passed,
             token_budget_breakdown=section_tokens,
+            budget_ceiling=profile.ceiling_budget,
+            remaining_budget=max(0, effective_total_budget - total_tokens_used),
+            profile_name=profile.name,
+            ordering_strategy=str(getattr(profile.ordering_strategy, "value", profile.ordering_strategy)),
         )
 
 
