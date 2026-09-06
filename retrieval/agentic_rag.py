@@ -89,6 +89,40 @@ class AgenticRAGPipeline:
         t0 = time.perf_counter()
         logger.debug("pipeline.stage_start", stage="plan_route", tier=tier, query_hash=query_hash)
 
+        # Core Layer 2 — Structured Decision Cache: the full post-processed
+        # plan is cached keyed by router version, so repeat queries skip the
+        # planning LLM entirely.
+        _decision_cache_on = bool(getattr(self.settings, "enable_core_decision_cache", True))
+        if _decision_cache_on:
+            try:
+                from core.llm_cache import get_cached_decision
+
+                _router_version = getattr(self.settings, "cache_router_version", "v1")
+                cached_plan = await asyncio.wait_for(
+                    get_cached_decision("agentic_plan", query, _router_version, self.settings),
+                    timeout=0.5,
+                )
+                if isinstance(cached_plan, dict) and cached_plan.get("intent"):
+                    cached_plan.pop("_timing_ms", None)
+                    cached_plan["_timing_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+                    cached_plan["decision_cache"] = "hit"
+                    RAG_STAGE_DURATION_SECONDS.labels(stage="plan_route", tier=tier).observe(
+                        time.perf_counter() - t0
+                    )
+                    logger.info(
+                        "pipeline.stage_complete",
+                        stage="plan_route",
+                        tier=tier,
+                        decision_cache="hit",
+                        intent=cached_plan.get("intent"),
+                        strategy=cached_plan.get("retrieval_strategy"),
+                    )
+                    return cached_plan
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug("plan_route.decision_cache_lookup_failed error=%s", e)
+
         def _infer_modality(q: str) -> str:
             q_low = q.lower()
             if re.search(r"(--[a-zA-Z0-9_-]+|\b[A-Z][a-zA-Z0-9]+Exception\b|\bError:\b|\b\d{3}\s+Forbidden\b|\b\d+\.\d+\.\d+\b)", q):
@@ -211,7 +245,28 @@ class AgenticRAGPipeline:
 
         elapsed = time.perf_counter() - t0
         plan["_timing_ms"] = round(elapsed * 1000, 2)
+        plan.setdefault("decision_cache", "miss")
         RAG_STAGE_DURATION_SECONDS.labels(stage="plan_route", tier=tier).observe(elapsed)
+
+        # Write the finalized plan into the structured decision cache.
+        if _decision_cache_on and plan.get("intent"):
+            try:
+                from core.llm_cache import set_cached_decision
+
+                _router_version = getattr(self.settings, "cache_router_version", "v1")
+                await set_cached_decision(
+                    "agentic_plan",
+                    query,
+                    dict(plan),
+                    _router_version,
+                    self.settings,
+                    ttl_seconds=int(getattr(self.settings, "core_decision_cache_ttl_seconds", 900)),
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug("plan_route.decision_cache_write_failed error=%s", e)
+
         logger.info(
             "pipeline.stage_complete",
             stage="plan_route",
@@ -316,7 +371,10 @@ class AgenticRAGPipeline:
         plan: dict[str, Any] | None = None,
     ) -> tuple[list[RetrievalResult], str]:
         t0 = time.perf_counter()
-        cache_query_key = f"agentic:{hashlib.sha256(query.encode()).hexdigest()[:16]}:{provider_filter or 'all'}:{tier}"
+        # Retrieval cache key includes the corpus version — re-ingesting the
+        # corpus invalidates these entries (matches the rag:v2 schema).
+        _corpus_version = getattr(self.settings, "cache_corpus_version", "v1")
+        cache_query_key = f"agentic:{_corpus_version}:{hashlib.sha256(query.encode()).hexdigest()[:16]}:{provider_filter or 'all'}:{tier}"
 
         try:
             cached = await get_cached_retrieval_result(cache_query_key, provider_filter)
@@ -777,6 +835,124 @@ class AgenticRAGPipeline:
 
         return f"{query} technical specifications configuration limits"
 
+    async def _validate_and_repair(
+        self,
+        query: str,
+        final_answer: str,
+        graded_chunks: list[RetrievalResult],
+        citation_mgr: Any | None,
+        tier: str,
+        thinking_level: str | None,
+        timings: dict[str, float],
+        emit_event: Any | None,
+        allow_llm_check: bool = True,
+        allow_retry: bool = True,
+    ) -> tuple[str, dict[str, Any]]:
+        """Core Layer 4 — claim-level verification, citation attribution, and
+        multi-dimensional validation with a bounded agent retry.
+
+        Deterministic claim entailment runs first; when grounding is ambiguous
+        and evidence exists, the evaluator model re-scores the flagged claims
+        (CLAIM_VERIFICATION_PROMPT). Persistently unsupported answers trigger
+        at most ``core_generation_max_retries`` feedback-grounded regenerations;
+        otherwise a deterministic grounding caveat is appended.
+        """
+        from generation.validator import (
+            append_caveat,
+            build_retry_messages,
+            deterministic_cleanup,
+            policies_from_settings,
+            resolve_claim_verification,
+        )
+        from metrics import GENERATION_RETRIES_TOTAL
+
+        if not getattr(self.settings, "enable_core_output_validation", True):
+            return final_answer, {}
+
+        t0_val = time.perf_counter()
+        policy = policies_from_settings(tier, self.settings)
+        if not allow_retry:
+            policy.max_retries = 0
+        if not allow_llm_check:
+            policy.enable_llm_claim_check = False
+
+        chunk_to_source = citation_mgr.source_number_for_chunk if citation_mgr is not None else None
+        try:
+            report = await resolve_claim_verification(
+                final_answer, query, graded_chunks, citation_mgr, policy, self.settings, chunk_to_source
+            )
+        except Exception as e:
+            logger.warning("core_output_validation.failed", error=str(e))
+            return final_answer, {}
+
+        retries_used = 0
+        while report.retryable and retries_used < policy.max_retries:
+            retries_used += 1
+            GENERATION_RETRIES_TOTAL.labels(tier=policy.tier).inc()
+            if emit_event and getattr(self.settings, "enable_structured_stage_events", True):
+                await emit_event(_stage_event(
+                    "validate",
+                    f"Validation flagged {len(report.unsupported_claims)} unsupported claims — revising...",
+                    "start",
+                ))
+            try:
+                from api.chat_routes import generate_with_fallback
+
+                retry_messages = build_retry_messages(query, final_answer, report, graded_chunks)
+                retry_answer, _ = await asyncio.wait_for(
+                    generate_with_fallback(
+                        messages=retry_messages, stream=False, tier=tier, thinking_level=thinking_level
+                    ),
+                    timeout=float(getattr(self.settings, "claim_verification_timeout_seconds", 8.0)) * 3,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("core_validation_retry.failed", error=str(e))
+                break
+            if not retry_answer or not retry_answer.strip():
+                break
+
+            retry_answer = deterministic_cleanup(retry_answer)
+            try:
+                retry_report = await resolve_claim_verification(
+                    retry_answer, query, graded_chunks, citation_mgr, policy, self.settings, chunk_to_source
+                )
+            except Exception as e:
+                logger.warning("core_validation_retry.revalidate_failed", error=str(e))
+                break
+            # Accept the revision only when it does not make validation worse.
+            if retry_report.is_valid or len(retry_report.issues) < len(report.issues):
+                final_answer = retry_answer
+                report = retry_report
+            if report.is_valid:
+                break
+
+        if not report.is_valid:
+            # Deterministic mitigation: annotate persistently ungrounded answers.
+            if not report.dimensions["grounding"].passed:
+                final_answer = append_caveat(final_answer, report)
+
+        report_dict = report.to_dict()
+        report_dict["retries_used"] = retries_used
+        timings["validate"] = round((time.perf_counter() - t0_val) * 1000, 2)
+        if emit_event and getattr(self.settings, "enable_structured_stage_events", True):
+            await emit_event(_stage_event(
+                "validate",
+                "Answer validated against evidence" if report.is_valid else "Answer validated with caveats",
+                "complete",
+                elapsed_ms=timings["validate"],
+            ))
+        logger.info(
+            "pipeline.stage_complete",
+            stage="validate",
+            tier=tier,
+            is_valid=report.is_valid,
+            claim_support=report.claim_support,
+            retries_used=retries_used,
+        )
+        return final_answer, report_dict
+
     async def _generate_and_verify(
         self,
         query: str,
@@ -795,25 +971,42 @@ class AgenticRAGPipeline:
         user_memories: list[dict] | None = None,
         pricing_data: list[dict[str, Any]] | None = None,
         calc_results: Any | None = None,
+        plan: dict[str, Any] | None = None,
+        citation_mgr: Any | None = None,
+        validation_out: dict[str, Any] | None = None,
     ) -> tuple[str | AsyncGenerator[str, None], str]:
         from api.chat_routes import _build_pipeline_messages, generate_with_fallback
         from llm.provider import calculate_effective_prompt_budget
 
-        rag_results = [
-            {
-                "chunk_id": chunk.chunk_id,
-                "provider": chunk.metadata.get("provider", "cloud"),
-                "service": chunk.metadata.get("service", ""),
-                "section": chunk.metadata.get("section", ""),
-                "url": chunk.metadata.get("url", ""),
-                "content": chunk.text,
-                "title": chunk.metadata.get("title", ""),
-                "parent_chunk_id": chunk.metadata.get("parent_chunk_id"),
-                "hierarchy_level": chunk.metadata.get("hierarchy_level", 1),
-                "is_coalesced_parent": chunk.metadata.get("is_coalesced_parent", False),
-            }
-            for chunk in graded_chunks
-        ]
+        # Core Layer 3 — plan-aware evidence assembly: annotate and order the
+        # evidence by plan sub-goal coverage, and let the plan digest ride into
+        # the prompt as a policy block.
+        rag_results: list[dict[str, Any]] = []
+        plan_digest: str | None = None
+        if plan is not None and getattr(self.settings, "enable_core_plan_aware_assembly", True):
+            try:
+                from generation.assembly import assemble_plan_aware_evidence
+
+                rag_results, plan_digest = assemble_plan_aware_evidence(graded_chunks, plan)
+            except Exception as e:
+                logger.warning("plan_aware_assembly.failed", error=str(e))
+                rag_results = []
+        if not rag_results:
+            rag_results = [
+                {
+                    "chunk_id": chunk.chunk_id,
+                    "provider": chunk.metadata.get("provider", "cloud"),
+                    "service": chunk.metadata.get("service", ""),
+                    "section": chunk.metadata.get("section", ""),
+                    "url": chunk.metadata.get("url", ""),
+                    "content": chunk.text,
+                    "title": chunk.metadata.get("title", ""),
+                    "parent_chunk_id": chunk.metadata.get("parent_chunk_id"),
+                    "hierarchy_level": chunk.metadata.get("hierarchy_level", 1),
+                    "is_coalesced_parent": chunk.metadata.get("is_coalesced_parent", False),
+                }
+                for chunk in graded_chunks
+            ]
 
         tier_context_budget = {
             "Free": getattr(self.settings, "prompt_budget_free", self.settings.context_tokens_free),
@@ -843,6 +1036,7 @@ class AgenticRAGPipeline:
             session_summary=session_summary,
             user_memories=user_memories,
             tier=tier,
+            policy_digest=plan_digest,
         )
 
         if emit_event:
@@ -885,6 +1079,25 @@ class AgenticRAGPipeline:
             gen_elapsed = time.perf_counter() - t0_gen
             timings["generate"] = round(gen_elapsed * 1000, 2)
             RAG_STAGE_DURATION_SECONDS.labels(stage="agentic_generate", tier=tier).observe(gen_elapsed)
+
+            # High-confidence evidence still gets deterministic validation.
+            try:
+                raw_answer, report_dict = await self._validate_and_repair(
+                    query=query,
+                    final_answer=raw_answer,
+                    graded_chunks=graded_chunks,
+                    citation_mgr=citation_mgr,
+                    tier=tier,
+                    thinking_level=thinking_level,
+                    timings=timings,
+                    emit_event=emit_event,
+                    allow_llm_check=False,
+                    allow_retry=False,
+                )
+                if validation_out is not None:
+                    validation_out.update(report_dict)
+            except Exception as e:
+                logger.warning("core_fastpath_validation.failed", error=str(e))
             return raw_answer, model_used
 
         t0_gen = time.perf_counter()
@@ -956,12 +1169,48 @@ class AgenticRAGPipeline:
         )
 
         if stream:
+            # Streaming path: deterministic-only validation of the finalized
+            # answer (no added LLM round-trips to protect TTFT).
+            try:
+                final_answer, report_dict = await self._validate_and_repair(
+                    query=query,
+                    final_answer=final_answer,
+                    graded_chunks=graded_chunks,
+                    citation_mgr=citation_mgr,
+                    tier=tier,
+                    thinking_level=thinking_level,
+                    timings=timings,
+                    emit_event=emit_event,
+                    allow_llm_check=False,
+                    allow_retry=False,
+                )
+                if validation_out is not None:
+                    validation_out.update(report_dict)
+            except Exception as e:
+                logger.warning("core_stream_validation.failed", error=str(e))
+
             async def _answer_stream() -> AsyncGenerator[str, None]:
                 chunk_size = 20
                 for i in range(0, len(final_answer), chunk_size):
                     yield final_answer[i:i + chunk_size]
                     await asyncio.sleep(0)
             return _answer_stream(), model_used
+
+        try:
+            final_answer, report_dict = await self._validate_and_repair(
+                query=query,
+                final_answer=final_answer,
+                graded_chunks=graded_chunks,
+                citation_mgr=citation_mgr,
+                tier=tier,
+                thinking_level=thinking_level,
+                timings=timings,
+                emit_event=emit_event,
+            )
+            if validation_out is not None:
+                validation_out.update(report_dict)
+        except Exception as e:
+            logger.warning("core_validation.wiring_error", error=str(e))
 
         return final_answer, model_used
 
@@ -1072,9 +1321,26 @@ class AgenticRAGPipeline:
         async def _pricing() -> list[dict[str, Any]]:
             if "PRICING" not in plan.get("routes", []):
                 return []
+            # Core Layer 3 — Retrieval/Tool Cache: pricing lookups are
+            # deterministic per (query, providers) and cached via tool_cache.
+            if getattr(self.settings, "enable_core_tool_cache", True):
+                try:
+                    from core.tool_cache import get_cached_tool_result
+
+                    _prov_key = ",".join(sorted(getattr(classification, "providers", []) or []))
+                    cached_pricing = await get_cached_tool_result(
+                        "cloud_pricing", {"q": query, "providers": _prov_key}
+                    )
+                    if isinstance(cached_pricing, list):
+                        logger.info("tool_cache.pricing_hit", providers=_prov_key)
+                        return cached_pricing
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.debug("tool_cache.pricing_lookup_failed error=%s", e)
             try:
                 from tools.pricing import fetch_cloud_pricing
-                return await fetch_cloud_pricing(
+                pricing_out = await fetch_cloud_pricing(
                     query=query,
                     providers=getattr(classification, "providers", []),
                     aws_tool=getattr(agent_pipeline, "aws_pricing", None),
@@ -1082,6 +1348,17 @@ class AgenticRAGPipeline:
                     gcp_tool=getattr(agent_pipeline, "gcp_pricing", None),
                     timeout=2.5,
                 )
+                if pricing_out and getattr(self.settings, "enable_core_tool_cache", True):
+                    try:
+                        from core.tool_cache import set_cached_tool_result
+
+                        _prov_key = ",".join(sorted(getattr(classification, "providers", []) or []))
+                        await set_cached_tool_result(
+                            "cloud_pricing", {"q": query, "providers": _prov_key}, pricing_out
+                        )
+                    except Exception as e:
+                        logger.debug("tool_cache.pricing_write_failed error=%s", e)
+                return pricing_out
             except Exception as e:
                 logger.warning("agentic_rag.pricing_failed", error=str(e))
                 return []
@@ -1133,6 +1410,7 @@ class AgenticRAGPipeline:
                 service=m.get("service", ""),
                 title=m.get("title", "Cloud Documentation"),
                 section=m.get("section", ""),
+                chunk_id=chunk.chunk_id,
             )
         for r in internet_results:
             citation_mgr.register_source(
@@ -1193,19 +1471,20 @@ class AgenticRAGPipeline:
                     if refine_chunks:
                         graded_refine = await self._grade_evidence(refined_query, refine_chunks, tier)
                         seen_cids = {c.chunk_id for c in graded_chunks}
-                        for c in graded_refine:
-                            if c.chunk_id not in seen_cids:
-                                seen_cids.add(c.chunk_id)
-                                graded_chunks.append(c)
-                                m = c.metadata
-                                citation_mgr.register_source(
-                                    source_type="rag",
-                                    url=m.get("url", ""),
-                                    provider=m.get("provider", "cloud"),
-                                    service=m.get("service", ""),
-                                    title=m.get("title", "Cloud Documentation"),
-                                    section=m.get("section", ""),
-                                )
+                    for c in graded_refine:
+                        if c.chunk_id not in seen_cids:
+                            seen_cids.add(c.chunk_id)
+                            graded_chunks.append(c)
+                            m = c.metadata
+                            citation_mgr.register_source(
+                                source_type="rag",
+                                url=m.get("url", ""),
+                                provider=m.get("provider", "cloud"),
+                                service=m.get("service", ""),
+                                title=m.get("title", "Cloud Documentation"),
+                                section=m.get("section", ""),
+                                chunk_id=c.chunk_id,
+                            )
                         graded_chunks = sorted(
                             graded_chunks,
                             key=lambda x: float(x.metadata.get("grade_score", x.score)),
@@ -1214,12 +1493,33 @@ class AgenticRAGPipeline:
                 timings["iterative_refinement"] = round((time.perf_counter() - t0_refine) * 1000, 2)
 
         graded_chunks = self._expand_hierarchical_context(graded_chunks)
+
+        # Core Layer 3 — task-aware selective compression: intent-driven
+        # extraction keeps load-bearing sentences (commands, specs, prices),
+        # preserving tables, code, and coalesced parents.
+        if getattr(self.settings, "enable_core_task_aware_compression", True) and graded_chunks:
+            t0_comp = time.perf_counter()
+            try:
+                from generation.compression import compress_evidence
+
+                graded_chunks = compress_evidence(
+                    query,
+                    graded_chunks,
+                    policy="core",
+                    task_intent=plan.get("intent"),
+                    settings=self.settings,
+                )
+            except Exception as e:
+                logger.warning("core_task_compression.failed", error=str(e))
+            timings["task_compression"] = round((time.perf_counter() - t0_comp) * 1000, 2)
+
         timings["grade_evidence"] = round((time.perf_counter() - t0_grade) * 1000, 2)
 
         if emit_event and getattr(self.settings, "enable_structured_stage_events", True):
             await emit_event(_stage_event("grade_evidence", "Evidence graded", "complete", elapsed_ms=timings["grade_evidence"]))
 
         # Stage 4 — Generate & Self-Critique
+        validation_out: dict[str, Any] = {}
         answer_or_stream, model_used = await self._generate_and_verify(
             query=query,
             graded_chunks=graded_chunks,
@@ -1237,6 +1537,9 @@ class AgenticRAGPipeline:
             user_memories=user_memories,
             pricing_data=pricing_data,
             calc_results=calc_results,
+            plan=plan,
+            citation_mgr=citation_mgr,
+            validation_out=validation_out,
         )
 
         sources_dump = [s.model_dump() for s in citation_mgr.get_sources()]
@@ -1263,4 +1566,5 @@ class AgenticRAGPipeline:
             pipeline_timings=timings,
             fallback_pass=fallback_pass,
             pipeline_type="agentic_rag",
+            validation=validation_out,
         )

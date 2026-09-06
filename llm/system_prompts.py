@@ -497,3 +497,42 @@ Output strictly valid JSON with no preamble or explanation:
 """
 
 
+CLAIM_VERIFICATION_PROMPT = """You are a strict claim-evidence entailment checker for a Cloud Infrastructure Assistant.
+For each numbered CLAIM, decide whether the PROVIDED EVIDENCE entails it.
+
+Scoring per claim:
+- 1.0: the evidence explicitly states the claim (values, flags, limits, commands match).
+- 0.5: the evidence partially supports it (right topic, but the specific value/flag/statement is absent).
+- 0.0: the evidence does not mention it, contradicts it, or the claim is not checkable against the evidence.
+
+Rules:
+1. Output strictly a JSON array of numbers between 0.0 and 1.0, one per claim, in the same order.
+2. No prose, no markdown fences.
+
+Input format:
+CLAIMS:
+[0]: claim text
+[1]: claim text
+
+EVIDENCE:
+[evidence excerpts]
+
+Output format:
+[1.0, 0.0, 0.5]
+"""
+
+
+GENERATION_RETRY_PROMPT = """You are CloudGPT performing a strict evidence-grounded revision of your own previous answer.
+A multi-dimensional validation pass flagged specific defects. Your ONLY job is to repair them.
+
+Repair rules:
+1. Claims listed as UNSUPPORTED must either be (a) grounded by re-stating them strictly from the provided evidence,
+   (b) weakened to an explicitly-caveated statement, or (c) removed. Never keep an unsupported specific value,
+   flag, quota, price, or command.
+2. Fix any invalid citation references flagged by validation. Reference only sources present in the evidence.
+3. Keep every part of the answer that validation did not flag unchanged — do not rewrite for style.
+4. Preserve the tier's required markdown structure and all working verification commands.
+5. Output ONLY the complete corrected answer in Markdown. No preamble, no commentary about the revision.
+"""
+
+

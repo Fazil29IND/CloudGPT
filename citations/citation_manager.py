@@ -28,11 +28,14 @@ class CitationManager:
     def __init__(self) -> None:
         self._sources: list[CitationSource] = []
         self._next_source_number = 1
+        # chunk_id -> source_number mapping for claim-level source-to-chunk attribution
+        self._chunk_source_numbers: dict[str, int] = {}
 
     def reset(self) -> None:
         """Reset the citation manager for a new query."""
         self._sources.clear()
         self._next_source_number = 1
+        self._chunk_source_numbers.clear()
 
     def register_source(
         self,
@@ -42,10 +45,15 @@ class CitationManager:
         service: str | None = None,
         title: str | None = None,
         section: str | None = None,
+        chunk_id: str | None = None,
     ) -> int:
         """
         Register a new source and get its citation number.
-        
+
+        ``chunk_id`` optionally links the source to the retrieval chunk it came
+        from so claim-level validation can map an answer claim back to the exact
+        evidence chunk and citation number that supports it.
+
         Returns:
             The integer source number.
         """
@@ -62,7 +70,15 @@ class CitationManager:
             section=section,
         )
         self._sources.append(source)
+        if chunk_id and chunk_id not in self._chunk_source_numbers:
+            self._chunk_source_numbers[chunk_id] = source_number
         return source_number
+
+    def source_number_for_chunk(self, chunk_id: str | None) -> int | None:
+        """Return the citation number registered for a retrieval chunk, if any."""
+        if not chunk_id:
+            return None
+        return self._chunk_source_numbers.get(chunk_id)
 
     def get_sources(self) -> list[CitationSource]:
         """Get all registered sources."""

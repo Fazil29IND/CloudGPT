@@ -297,7 +297,7 @@ async def invalidate_corpus_cache(new_corpus_version: str = "v2") -> int:
         return 0
 
     evicted = 0
-    patterns = ["rag:v2:retrieval:*", "rag:v2:answer:*", "semcache:*"]
+    patterns = ["rag:v2:retrieval:*", "rag:v2:answer:*", "rag:v2:decision:*", "rag:v2:stage:*", "rag:v2:policy:*", "semcache:*"]
     for pattern in patterns:
         cursor = 0
         while True:
@@ -313,6 +313,109 @@ async def invalidate_corpus_cache(new_corpus_version: str = "v2") -> int:
         evicted,
     )
     return evicted
+
+
+# ─── Structured Decision Cache (per-scope stage decisions) ──────────────────
+
+_DECISION_SCOPES = ("agentic_plan", "adaptive_transform", "router_classification")
+
+
+def _decision_key(scope: str, query_normalized: str, producer_version: str) -> str:
+    digest = hashlib.sha256(f"{scope}:{query_normalized}".encode("utf-8")).hexdigest()[:24]
+    return f"rag:v2:decision:{scope}:{producer_version}:{digest}"
+
+
+async def get_cached_decision(
+    scope: str,
+    query: str,
+    producer_version: str,
+    settings: Any = None,
+) -> Optional[dict[str, Any]]:
+    """Retrieve a cached structured stage decision (e.g. agentic plan, adaptive transform).
+
+    ``scope`` separates producers that emit different schemas for the same
+    query (agentic_plan, adaptive_transform, router_classification).
+    ``producer_version`` should be the prompt/version pointer that invalidates
+    the decision when its producer changes (e.g. cache_router_version).
+    """
+    if scope not in _DECISION_SCOPES or not redis_client.is_available:
+        return None
+
+    settings = settings or get_settings()
+    key = _decision_key(scope, query.strip().lower(), producer_version)
+
+    t0 = time.perf_counter()
+    data = await redis_client.get_json(key)
+    elapsed = time.perf_counter() - t0
+    REDIS_LATENCY.labels(op="get_decision").observe(elapsed)
+
+    if data is not None:
+        REDIS_CACHE_HITS.labels(layer="decision").inc()
+        logger.debug("Decision Cache Hit for key: %s", key)
+    else:
+        REDIS_CACHE_MISSES.labels(layer="decision").inc()
+    return data
+
+
+async def set_cached_decision(
+    scope: str,
+    query: str,
+    decision: dict[str, Any],
+    producer_version: str,
+    settings: Any = None,
+    ttl_seconds: int = 900,
+) -> bool:
+    """Cache a structured stage decision with TTL jitter."""
+    if scope not in _DECISION_SCOPES or not redis_client.is_available:
+        return False
+
+    key = _decision_key(scope, query.strip().lower(), producer_version)
+    t0 = time.perf_counter()
+    success = await redis_client.set_json(key, decision, ex=_jitter_ttl(ttl_seconds))
+    elapsed = time.perf_counter() - t0
+    REDIS_LATENCY.labels(op="set_decision").observe(elapsed)
+    return success
+
+
+# ─── Feedback-Driven Policy Records ─────────────────────────────────────────
+
+def policy_record_key(query_normalized: str) -> str:
+    digest = hashlib.sha256(query_normalized.encode("utf-8")).hexdigest()[:24]
+    return f"rag:v2:policy:{digest}"
+
+
+async def get_cached_query_policy(query: str) -> Optional[dict[str, Any]]:
+    """Read the feedback-driven policy record for a query, if any."""
+    if not redis_client.is_available:
+        return None
+    try:
+        return await redis_client.get_json(policy_record_key(query.strip().lower()))
+    except Exception as e:
+        logger.debug("policy_record_read_failed error=%s", e)
+        return None
+
+
+async def set_cached_query_policy(query: str, record: dict[str, Any], ttl_seconds: int) -> bool:
+    """Write a feedback-driven policy record for a query."""
+    if not redis_client.is_available:
+        return False
+    try:
+        return await redis_client.set_json(
+            policy_record_key(query.strip().lower()), record, ex=max(1, int(ttl_seconds))
+        )
+    except Exception as e:
+        logger.debug("policy_record_write_failed error=%s", e)
+        return False
+
+
+async def delete_cached_query_policy(query: str) -> int:
+    if not redis_client.is_available:
+        return 0
+    try:
+        return await redis_client.delete(policy_record_key(query.strip().lower()))
+    except Exception as e:
+        logger.debug("policy_record_delete_failed error=%s", e)
+        return 0
 
 
 # ─── Backward Compatibility Shims ──────────────────────────────────────────

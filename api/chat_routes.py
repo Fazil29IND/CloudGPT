@@ -207,6 +207,10 @@ class PipelineResult:
     pipeline_type: str = "current_rag"
     context_validator_flags: list[str] = field(default_factory=list)
     cqc_coherence_score: float = 1.0
+    # Layer-4 output validation report (claim support, dimensions, claim→source
+    # attribution). Populated by the tier pipelines; empty dict when validation
+    # is disabled or not applicable.
+    validation: dict[str, Any] = field(default_factory=dict)
     # Provider-reported token usage for the main generation call
     # ({"prompt_tokens": int|None, "total_tokens": int|None, ...}). Populated
     # lazily for streams — read only after the token stream is exhausted.
@@ -816,7 +820,26 @@ async def _gather_pipeline_context(
         ) / 1000.0
 
         try:
+            from metrics import CACHE_CASCADE_HITS
+
             cached_candidates = await get_cached_retrieval_result(query, provider_filter, pipeline.settings)
+            # ③ Hybrid retrieval cache — multi-turn queries retrieve under the
+            # contextual rewrite, so consult that representation's key too.
+            if cached_candidates is None and chat_history and getattr(
+                pipeline.settings, "enable_contextual_query_rewriting", True
+            ):
+                try:
+                    from retrieval.query_processor import rewrite_contextual_query
+
+                    _ctx = rewrite_contextual_query(query, chat_history=chat_history)
+                    _eff = (_ctx.effective_search_query or "").strip()
+                    if _eff and _eff.lower() != query.strip().lower():
+                        cached_candidates = await get_cached_retrieval_result(
+                            _eff, provider_filter, pipeline.settings
+                        )
+                except Exception as rewrite_err:
+                    logger.debug("retrieval_cache.rewrite_lookup_skipped error=%s", rewrite_err)
+
             pf_tag = provider_filter or "all"
             neg_hash = _hashlib.sha256(f"{query}:{pf_tag}".encode("utf-8")).hexdigest()[:24]
             neg_cache_key = f"rag:v2:negative:{neg_hash}"
@@ -828,6 +851,7 @@ async def _gather_pipeline_context(
             elif cached_candidates is not None:
                 top_results = cached_candidates
                 fb_pass = "cached"
+                CACHE_CASCADE_HITS.labels(tier="Free", layer="retrieval").inc()
             else:
                 adaptive_top_k = pipeline.settings.retrieval_top_k
                 if (
@@ -856,6 +880,20 @@ async def _gather_pipeline_context(
                     await redis_client.set(neg_cache_key, "1", ex=30)
                 elif top_results:
                     await set_cached_retrieval_result(query, top_results, provider_filter, pipeline.settings, ttl_seconds=21600)
+                    # Cache under the rewritten representation too so future
+                    # multi-turn lookups hit either key.
+                    if chat_history and getattr(pipeline.settings, "enable_contextual_query_rewriting", True):
+                        try:
+                            from retrieval.query_processor import rewrite_contextual_query as _rq
+
+                            _wctx = _rq(query, chat_history=chat_history)
+                            _weff = (_wctx.effective_search_query or "").strip()
+                            if _weff and _weff.lower() != query.strip().lower():
+                                await set_cached_retrieval_result(
+                                    _weff, top_results, provider_filter, pipeline.settings, ttl_seconds=21600
+                                )
+                        except Exception:
+                            pass
 
             if getattr(pipeline.settings, "enable_context_validator", True) and top_results:
                 from core.context_validator import ContextValidator
@@ -870,6 +908,20 @@ async def _gather_pipeline_context(
                 if not chunk_vr.is_valid:
                     logger.warning("context_validator.chunks_rejected", issues=chunk_vr.issues, tier=tier)
                     top_results = []
+
+            # Lite Layer 3 — conditional extractive/contextual compression +
+            # fixed evidence-aware ordering (stale demotion, score order).
+            if top_results and getattr(pipeline.settings, "enable_lite_evidence_compression", True):
+                try:
+                    from generation.compression import compress_evidence
+                    from generation.assembly import order_fixed_evidence
+
+                    top_results = compress_evidence(
+                        query, top_results, policy="lite", settings=pipeline.settings
+                    )
+                    top_results = order_fixed_evidence(top_results)
+                except Exception as comp_err:
+                    logger.warning("lite_evidence_compression.failed", error=str(comp_err))
 
             for res in top_results:
                 m_data = res.metadata if hasattr(res, "metadata") else (res.get("metadata", {}) if isinstance(res, dict) else {})
@@ -991,7 +1043,8 @@ async def _gather_pipeline_context(
     fallback_pass = rag_fallback
     pricing_data.extend(pricing_items)
 
-    # Register citations deterministically
+    # Register citations deterministically (chunk_id links sources to the
+    # retrieval chunk for claim-level source-to-chunk attribution)
     for r in rag_results:
         citation_mgr.register_source(
             source_type="rag",
@@ -1000,6 +1053,7 @@ async def _gather_pipeline_context(
             service=r.get("service", ""),
             title=r.get("title", "Cloud Documentation"),
             section=r.get("section", ""),
+            chunk_id=r.get("chunk_id") or None,
         )
 
     for item in internet_results:
@@ -1110,6 +1164,7 @@ def _build_pipeline_messages(
     user_memories: list[dict[str, Any]] | None = None,
     tier: str = "Free",
     model: str = "unknown",
+    policy_digest: str | None = None,
 ) -> list[dict]:
     """Assemble the LLM message list from gathered context + history + attachments + summary + user memories."""
     cls_dump = classification.model_dump() if hasattr(classification, "model_dump") else classification
@@ -1127,6 +1182,7 @@ def _build_pipeline_messages(
         user_memories=user_memories,
         tier=tier,
         model=model,
+        policy_digest=policy_digest,
     )
     system_msg = messages[0]
     user_msg = messages[1]
@@ -1177,12 +1233,36 @@ async def execute_agent_pipeline(
         and not attachment_texts
         and len(query.strip()) <= getattr(pipeline.settings, "smalltalk_max_query_chars", 120)
     )
+    # Apex adaptive cache router: when enabled, cache-level decisions for Max
+    # requests are made post-transform inside AdaptiveAdvancedRAGPipeline, so
+    # the pre-dispatch semantic layer is bypassed for Max.
+    _max_cache_router = (
+        tier == "Max" and getattr(pipeline.settings, "enable_adaptive_cache_router", True)
+    )
     _semcache_candidate = (
-        getattr(pipeline.settings, "enable_semantic_cache", True)
+        not _max_cache_router
+        and getattr(pipeline.settings, "enable_semantic_cache", True)
         and getattr(pipeline.settings, "semantic_cache_enabled", True)
         and not attachment_texts
         and not (chat_history and len(chat_history) > 1)
     )
+    # Lite Layer 1 — exact answer cache (L1 memory → Redis) consulted before
+    # any embedding work. History is differentiated via the same hash the
+    # endpoint uses, so multi-turn queries cannot false-hit.
+    _exact_candidate = (
+        tier == "Free"
+        and getattr(pipeline.settings, "enable_lite_exact_cache", True)
+        and not attachment_texts
+    )
+
+    def _history_cache_hash(history: list[dict] | None) -> str | None:
+        if not history:
+            return None
+        return _hashlib.sha256(
+            "|".join(f"{m.get('role', '')}:{m.get('content', '')[:500]}" for m in history).encode()
+        ).hexdigest()[:16]
+
+    _history_hash = _history_cache_hash(chat_history)
 
     query_embedding: list[float] | None = None
     if _gate_candidate or _semcache_candidate:
@@ -1215,8 +1295,62 @@ async def execute_agent_pipeline(
         except Exception as e:
             logger.warning("smalltalk.gate_error", error=str(e))
 
-    # ── Semantic Cache Check (Task 5) ─────────────────────────────────────────
-    if _semcache_candidate:
+    # ── Lite Cache Cascade: ① Exact → ② Semantic → ③ Hybrid Retrieval ────────
+    # Feedback-driven policy: a thumbs-down penalty record bypasses both
+    # answer-cache layers for this query (retrieval cache is unaffected).
+    _feedback_penalty = False
+    if (_exact_candidate or _semcache_candidate) and getattr(
+        pipeline.settings, "enable_feedback_cache_policy", True
+    ):
+        try:
+            from core.cache_policy import get_query_feedback_policy
+
+            _policy = await get_query_feedback_policy(query)
+            if _policy and _policy.get("rating") == -1:
+                _feedback_penalty = True
+                logger.info("cache_policy.answer_layers_bypassed", query=query[:60])
+        except Exception as e:
+            logger.warning("cache_policy.policy_lookup_error", error=str(e))
+
+    # ── ① Exact Cache Check ───────────────────────────────────────────────────
+    if _exact_candidate and not _feedback_penalty:
+        try:
+            _exact_ans = await get_cached_answer(
+                query=query,
+                provider_filter=provider_filter,
+                history_hash=_history_hash,
+            )
+            if isinstance(_exact_ans, dict) and _exact_ans.get("answer"):
+                from metrics import CACHE_CASCADE_HITS
+
+                CACHE_CASCADE_HITS.labels(tier="Free", layer="exact").inc()
+                logger.info("exact_cache.hit", query=query[:60])
+                ans_text = _exact_ans.get("answer", "")
+                ans_sources = _exact_ans.get("sources", [])
+                ans_model = _exact_ans.get("model", "exact-cache")
+
+                async def _exact_cached_stream() -> AsyncGenerator[str, None]:
+                    chunk_size = 25
+                    for i in range(0, len(ans_text), chunk_size):
+                        yield ans_text[i:i + chunk_size]
+                        await asyncio.sleep(0)
+
+                return PipelineResult(
+                    answer=ans_text,
+                    token_stream=_exact_cached_stream() if stream else None,
+                    routes=["RAG"],
+                    confidence=1.0,
+                    classification={"intent": "exact_cached"},
+                    sources=ans_sources,
+                    model_used=ans_model,
+                    pipeline_timings={"exact_cache": 1.0},
+                    pipeline_type="exact_cache",
+                )
+        except Exception as e:
+            logger.warning("exact_cache.lookup_error", error=str(e))
+
+    # ── ② Semantic Cache Check ────────────────────────────────────────────────
+    if _semcache_candidate and not _feedback_penalty:
         sem_cache = get_semantic_cache()
         try:
             if query_embedding is not None:
@@ -1228,7 +1362,12 @@ async def execute_agent_pipeline(
                         query=cached_answer_key, provider_filter=provider_filter
                     )
                     if cached_ans:
+                        from metrics import CACHE_CASCADE_HITS
+
                         SEMANTIC_CACHE_HITS.inc()
+                        CACHE_CASCADE_HITS.labels(
+                            tier="Free" if tier == "Free" else tier, layer="semantic"
+                        ).inc()
                         logger.info("semantic_cache.hit", similarity=round(sim, 3), query=query[:60])
                         ans_text = cached_ans.get("answer", "") if isinstance(cached_ans, dict) else str(cached_ans)
                         ans_sources = cached_ans.get("sources", []) if isinstance(cached_ans, dict) else []
@@ -1286,8 +1425,12 @@ async def execute_agent_pipeline(
         res.usage = dict(_last_gen_usage.get() or {})
         if query_embedding and getattr(pipeline.settings, "enable_semantic_cache", True) and getattr(pipeline.settings, "semantic_cache_enabled", True):
             try:
+                from core.cache_policy import skip_answer_cache_for_validation
+
                 get_semantic_cache().set(query_embedding, query)
-                if res.answer and not stream:
+                # Feedback-driven policy: validation-failed answers are never cached.
+                _cache_ok = not skip_answer_cache_for_validation(res.validation, pipeline.settings)
+                if res.answer and not stream and _cache_ok:
                     await set_cached_answer(
                         query=query,
                         response_payload={"answer": res.answer, "sources": res.sources, "model": res.model_used},
@@ -1316,8 +1459,12 @@ async def execute_agent_pipeline(
         res.usage = dict(_last_gen_usage.get() or {})
         if query_embedding and getattr(pipeline.settings, "enable_semantic_cache", True) and getattr(pipeline.settings, "semantic_cache_enabled", True):
             try:
+                from core.cache_policy import skip_answer_cache_for_validation
+
                 get_semantic_cache().set(query_embedding, query)
-                if res.answer and not stream:
+                # Feedback-driven policy: validation-failed answers are never cached.
+                _cache_ok = not skip_answer_cache_for_validation(res.validation, pipeline.settings)
+                if res.answer and not stream and _cache_ok:
                     await set_cached_answer(
                         query=query,
                         response_payload={"answer": res.answer, "sources": res.sources, "model": res.model_used},
@@ -1415,16 +1562,26 @@ async def execute_agent_pipeline(
             gen_sec = time.perf_counter() - t0_gen
             result.pipeline_timings["llm_generate"] = round(gen_sec * 1000, 2)
             RAG_STAGE_DURATION_SECONDS.labels(stage="llm_generate", tier=tier).observe(gen_sec)
+            # Post-hoc Lite validation on the assembled stream (deterministic
+            # only — the SSE contract is untouched, stored answer is annotated).
+            try:
+                from generation.validator import apply_lite_validation
+                apply_lite_validation(result, query, rag_results, citation_mgr, pipeline.settings)
+            except Exception as e:
+                logger.warning("lite_validation.stream_wiring_error", error=str(e))
             if query_embedding and getattr(pipeline.settings, "enable_semantic_cache", True) and getattr(pipeline.settings, "semantic_cache_enabled", True) and result.answer:
                 try:
-                    get_semantic_cache().set(query_embedding, query)
-                    await set_cached_answer(
-                        query=query,
-                        response_payload={"answer": result.answer, "sources": sources, "model": provider_name},
-                        model=provider_name,
-                        provider_filter=provider_filter,
-                        ttl_seconds=getattr(pipeline.settings, "redis_cache_ttl_seconds", 3600),
-                    )
+                    from core.cache_policy import skip_answer_cache_for_validation
+
+                    if not skip_answer_cache_for_validation(result.validation, pipeline.settings):
+                        get_semantic_cache().set(query_embedding, query)
+                        await set_cached_answer(
+                            query=query,
+                            response_payload={"answer": result.answer, "sources": sources, "model": provider_name},
+                            model=provider_name,
+                            provider_filter=provider_filter,
+                            ttl_seconds=getattr(pipeline.settings, "redis_cache_ttl_seconds", 3600),
+                        )
                 except Exception:
                     pass
 
@@ -1446,16 +1603,28 @@ async def execute_agent_pipeline(
     result.answer = sanitize_model_output(raw_answer)
     result.model_used = model_used
 
+    # Lite Layer 4 — validated grounded generation: deterministic cleanup,
+    # claim-level evidence entailment, claim→source citation mapping, and
+    # multi-dimensional output validation (zero added LLM latency).
+    try:
+        from generation.validator import apply_lite_validation
+        apply_lite_validation(result, query, rag_results, citation_mgr, pipeline.settings)
+    except Exception as e:
+        logger.warning("lite_validation.wiring_error", error=str(e))
+
     if query_embedding and getattr(pipeline.settings, "enable_semantic_cache", True) and getattr(pipeline.settings, "semantic_cache_enabled", True) and result.answer:
         try:
-            get_semantic_cache().set(query_embedding, query)
-            await set_cached_answer(
-                query=query,
-                response_payload={"answer": result.answer, "sources": sources, "model": model_used},
-                model=model_used,
-                provider_filter=provider_filter,
-                ttl_seconds=getattr(pipeline.settings, "redis_cache_ttl_seconds", 3600),
-            )
+            from core.cache_policy import skip_answer_cache_for_validation
+
+            if not skip_answer_cache_for_validation(result.validation, pipeline.settings):
+                get_semantic_cache().set(query_embedding, query)
+                await set_cached_answer(
+                    query=query,
+                    response_payload={"answer": result.answer, "sources": sources, "model": model_used},
+                    model=model_used,
+                    provider_filter=provider_filter,
+                    ttl_seconds=getattr(pipeline.settings, "redis_cache_ttl_seconds", 3600),
+                )
         except Exception:
             pass
 
@@ -2424,7 +2593,12 @@ async def download_attachment(attachment_id: str, request: Request) -> Response:
 
 @router.post("/feedback")
 async def message_feedback_endpoint(payload: FeedbackRequest, request: Request) -> dict[str, Any]:
-    """Record user feedback (rating 1 or -1) for an assistant message."""
+    """Record user feedback (rating 1 or -1) for an assistant message.
+
+    A thumbs-down additionally writes a feedback-driven cache-policy penalty
+    (answer caches bypass that query's results), and a thumbs-up writes a
+    boost record extending answer-cache freshness — see core/cache_policy.py.
+    """
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Please sign in")
@@ -2438,7 +2612,25 @@ async def message_feedback_endpoint(payload: FeedbackRequest, request: Request) 
             rating=payload.rating,
             reason=payload.reason,
         )
-        return {"status": "ok", "feedback": feedback}
+        # Feedback-driven cache policy: resolve the prompting query for the
+        # rated message and record the cache-policy consequence.
+        cache_policy_action: dict[str, Any] = {"recorded": False, "action": "none"}
+        if getattr(pipeline.settings, "enable_feedback_cache_policy", True):
+            try:
+                from db import get_message_feedback_context
+                from core.cache_policy import record_feedback_policy
+
+                context = await asyncio.to_thread(
+                    get_message_feedback_context, payload.message_id, user_id
+                )
+                query_text = (context or {}).get("query", "")
+                if query_text:
+                    cache_policy_action = await record_feedback_policy(
+                        query_text, payload.rating, payload.reason
+                    )
+            except Exception as policy_err:
+                logger.warning("cache_policy.feedback_wiring_failed", error=str(policy_err))
+        return {"status": "ok", "feedback": feedback, "cache_policy": cache_policy_action}
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
     except Exception as exc:

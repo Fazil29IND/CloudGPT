@@ -598,6 +598,140 @@ class Settings(BaseSettings):
         description="Candidate relevance feedback threshold below which Adaptive RAG triggers re-planning",
     )
 
+    # ── Layer 3: Evidence Compression & Context Assembly (3-Tier) ───────
+    enable_lite_evidence_compression: bool = Field(
+        default=True,
+        description="Conditional extractive/contextual compression of reranked passages in Hybrid RAG (Lite)",
+    )
+    lite_compression_token_threshold: int = Field(
+        default=3000,
+        description="Total evidence token estimate above which Lite tier compresses passages",
+    )
+    enable_core_task_aware_compression: bool = Field(
+        default=True,
+        description="Task/intent-aware selective evidence compression in Agentic RAG (Core)",
+    )
+    enable_core_plan_aware_assembly: bool = Field(
+        default=True,
+        description="Plan-aware evidence assembly (sub-goal ordering + plan digest) in Agentic RAG (Core)",
+    )
+
+    # ── Layer 4: Validated Grounded Generation (3-Tier) ─────────────────
+    enable_lite_output_validation: bool = Field(
+        default=True,
+        description="Deterministic claim-level support check, citation mapping, and multi-dimensional validation for Lite",
+    )
+    lite_min_claim_support: float = Field(
+        default=0.50,
+        description="Minimum aggregate claim-evidence support ratio before Lite adds a grounding caveat",
+    )
+    enable_core_output_validation: bool = Field(
+        default=True,
+        description="Claim-level verification, citation attribution, and multi-dimensional validation for Core",
+    )
+    enable_core_claim_verification: bool = Field(
+        default=True,
+        description="Allow the evaluator model to re-score ambiguous claims before a Core retry decision",
+    )
+    core_generation_max_retries: int = Field(
+        default=1,
+        description="Bounded regeneration attempts in Agentic RAG when output validation fails",
+    )
+    core_min_claim_support: float = Field(
+        default=0.55,
+        description="Minimum aggregate claim-evidence support ratio accepted in Agentic RAG (Core)",
+    )
+    enable_adaptive_output_validation: bool = Field(
+        default=True,
+        description="Adaptive claim-level verification and multi-dimensional validation for Apex",
+    )
+    adaptive_generation_max_retries: int = Field(
+        default=2,
+        description="Maximum validation-driven regeneration attempts in Adaptive RAG (Apex)",
+    )
+    adaptive_min_claim_support: float = Field(
+        default=0.60,
+        description="Minimum aggregate claim-evidence support ratio accepted in Adaptive RAG (Apex)",
+    )
+    adaptive_abstain_min_support: float = Field(
+        default=0.30,
+        description="Claim support floor below which Apex abstains instead of returning an ungrounded answer",
+    )
+    enable_adaptive_reranking: bool = Field(
+        default=True,
+        description="Strategy-aware rerank query selection and per-dimension reranking in Adaptive RAG (Apex)",
+    )
+    enable_adaptive_evidence_selection: bool = Field(
+        default=True,
+        description="Per-strategy evidence caps and dimension diversity selection in Adaptive RAG (Apex)",
+    )
+    enable_dynamic_policy_prompt: bool = Field(
+        default=True,
+        description="Inject a dynamic pipeline-policy digest into the Apex generation prompt",
+    )
+    validation_min_assessable_claims: int = Field(
+        default=3,
+        description="Answers with fewer assessable claims skip retry/abstention loops (deterministic flags only)",
+    )
+    claim_verification_timeout_seconds: float = Field(
+        default=8.0,
+        description="Timeout in seconds for the evaluator-model batched claim verification call",
+    )
+
+    # ── Tiered Cache Architecture (Lite / Core / Apex) ──────────────────
+    enable_lite_exact_cache: bool = Field(
+        default=True,
+        description="Consult the exact answer cache (L1+Redis) before the semantic cache in Hybrid RAG (Lite)",
+    )
+    enable_core_decision_cache: bool = Field(
+        default=True,
+        description="Cache the Agentic RAG structured retrieval plan keyed by router version",
+    )
+    core_decision_cache_ttl_seconds: int = Field(
+        default=900,
+        description="TTL in seconds for the Agentic RAG structured decision cache",
+    )
+    enable_core_tool_cache: bool = Field(
+        default=True,
+        description="Cache cloud pricing lookups through the tool cache in Agentic RAG",
+    )
+    enable_adaptive_cache_router: bool = Field(
+        default=True,
+        description="Route cache level usage per query strategy in Adaptive RAG (Apex)",
+    )
+    enable_apex_stage_caches: bool = Field(
+        default=True,
+        description="Cache Apex pipeline stages (transform decision, rerank+compress) independently",
+    )
+    apex_stage_cache_ttl_seconds: int = Field(
+        default=1800,
+        description="TTL in seconds for Apex rerank/compress stage cache entries",
+    )
+    adaptive_semantic_threshold_direct: float = Field(
+        default=0.97,
+        description="Strict semantic-cache similarity threshold for direct_fast (exact syntax) queries",
+    )
+    adaptive_semantic_threshold_multi_perspective: float = Field(
+        default=0.95,
+        description="Semantic-cache similarity threshold for multi_perspective comparison queries",
+    )
+    enable_feedback_cache_policy: bool = Field(
+        default=True,
+        description="Let user feedback drive cache policy (penalty on thumbs-down, boost on thumbs-up)",
+    )
+    feedback_penalty_ttl_seconds: int = Field(
+        default=86400,
+        description="TTL in seconds for the answer-cache penalty written on a thumbs-down feedback",
+    )
+    feedback_boost_ttl_multiplier: float = Field(
+        default=1.5,
+        description="Answer-cache write TTL multiplier applied when a thumbs-up boost record exists",
+    )
+    skip_answer_cache_on_validation_failure: bool = Field(
+        default=True,
+        description="Do not cache answers whose output validation reported grounding failures",
+    )
+
     # ── Cache & Corpus Versioning ───────────────────────────────────────
     cache_corpus_version: str = Field(
         default="v2",

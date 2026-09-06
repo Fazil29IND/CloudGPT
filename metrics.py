@@ -267,6 +267,43 @@ STRUCTURED_OUTPUT_FAILURES_TOTAL = Counter(
     labelnames=("role", "failure_reason"),  # failure_reason: json_decode | schema_invalid | timeout | empty
 )
 
+OUTPUT_VALIDATION_TOTAL = Counter(
+    "cloudgpt_output_validation_total",
+    "Multi-dimensional output validation outcomes by tier, dimension, and verdict.",
+    labelnames=("tier", "dimension", "outcome"),  # outcome: pass | fail
+)
+
+CLAIM_SUPPORT_SCORE = Histogram(
+    "cloudgpt_claim_support_score",
+    "Aggregate claim-level evidence support score of generated answers.",
+    labelnames=("tier",),
+    buckets=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
+)
+
+GENERATION_RETRIES_TOTAL = Counter(
+    "cloudgpt_generation_retries_total",
+    "Bounded generation retries triggered by output validation failures.",
+    labelnames=("tier",),
+)
+
+GENERATION_ABSTENTIONS_TOTAL = Counter(
+    "cloudgpt_generation_abstentions_total",
+    "Policy-based abstentions when validated grounding could not be achieved.",
+    labelnames=("tier",),
+)
+
+CACHE_CASCADE_HITS = Counter(
+    "cloudgpt_cache_cascade_hits_total",
+    "Hits per tiered cache cascade layer (exact, semantic, retrieval, decision, stage).",
+    labelnames=("tier", "layer"),
+)
+
+CACHE_POLICY_EVENTS = Counter(
+    "cloudgpt_cache_policy_events_total",
+    "Feedback-driven and adaptive cache-policy actions.",
+    labelnames=("action",),  # penalty | boost | cache_skip_validation | bypass_serve
+)
+
 
 def metrics_available() -> bool:
     """Whether prometheus_client is installed and metrics are live."""

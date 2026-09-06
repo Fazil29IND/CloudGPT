@@ -66,7 +66,7 @@ def _classification(routes=None, needs_internet=False):
 def _patched_gather(monkeypatch, classification, citation_mgr=None):
     from api import chat_routes
 
-    async def fake_gather(query, provider_filter, tier, emit_event=None):
+    async def fake_gather(query, provider_filter, tier, emit_event=None, chat_history=None):
         return (
             classification,
             classification.routes.copy(),

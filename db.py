@@ -1046,6 +1046,56 @@ def save_message_feedback(user_id: int, message_id: int, rating: int, reason: st
         put_connection(conn)
 
 
+def get_message_feedback_context(message_id: int, user_id: int) -> dict[str, Any] | None:
+    """Fetch the minimum context needed for feedback-driven cache policy.
+
+    Returns {"message_id", "session_id", "role", "content"} for the assistant
+    message plus the user query that prompted it (the preceding user message
+    in the same session), or None when not found / not owned by the user.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, user_id, session_id, role, content, created_at
+                FROM messages
+                WHERE id = %s AND user_id = %s
+                """,
+                (message_id, user_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            query_text = ""
+            if row["role"] == "assistant" and row["session_id"]:
+                cur.execute(
+                    """
+                    SELECT content FROM messages
+                    WHERE session_id = %s AND user_id = %s AND role = 'user'
+                      AND created_at <= %s
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (row["session_id"], user_id, row["created_at"]),
+                )
+                prev = cur.fetchone()
+                if prev:
+                    query_text = prev["content"] or ""
+            return {
+                "message_id": row["id"],
+                "user_id": row["user_id"],
+                "session_id": row["session_id"],
+                "role": row["role"],
+                "content": row["content"] or "",
+                "query": query_text,
+            }
+    except Exception:
+        raise
+    finally:
+        put_connection(conn)
+
+
 def create_artifact_record(
     *,
     user_id: int,

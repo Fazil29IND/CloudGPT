@@ -86,6 +86,7 @@ class ContextBuilder:
         tier: str = "Free",
         model: str = "unknown",
         chat_history: list[dict[str, Any]] | None = None,
+        policy_digest: str | None = None,
     ) -> list[dict[str, str]]:
         """
         Build a list of messages (system and user) for the LLM.
@@ -105,6 +106,8 @@ class ContextBuilder:
             user_memories: Optional durable user preferences and facts.
             tier: User tier name (Free, Pro, Max).
             model: Target model name for observability.
+            policy_digest: Optional dynamic pipeline-policy block (e.g. Apex
+                routing strategy + evidence state) appended to the system prompt.
 
         Returns:
             A list of messages (dicts with 'role' and 'content' keys).
@@ -567,5 +570,13 @@ class ContextBuilder:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ]
+
+        # Dynamic pipeline-policy block (Apex adaptive policy-aware prompt).
+        if policy_digest:
+            messages[0]["content"] = (
+                messages[0]["content"]
+                + "\n\nDYNAMIC PIPELINE POLICY (runtime retrieval state — follow when answering):\n"
+                + policy_digest
+            )
 
         return messages
