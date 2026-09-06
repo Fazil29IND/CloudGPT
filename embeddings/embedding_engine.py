@@ -46,8 +46,8 @@ class EmbeddingEngine:
     ) -> None:
         settings = get_settings()
         self.provider = (provider or getattr(settings, "embedding_provider", "gemini")).lower()
-        self.model_name = model_name or getattr(settings, "embedding_model", "gemini-embedding-2")
-        self.dimension = dimension if dimension is not None else getattr(settings, "embedding_dimension", 384)
+        self.model_name = model_name or getattr(settings, "embedding_model", "text-embedding-004")
+        self.dimension = dimension if dimension is not None else getattr(settings, "embedding_dimension", 768)
         self.model = None
         self._is_gemini = False
         self._is_fastembed = False
@@ -132,8 +132,9 @@ class EmbeddingEngine:
             output_dimensionality=self.dimension,
         )
         models_to_try = [self.model_name]
-        if "gemini-embedding-001" not in models_to_try:
-            models_to_try.append("gemini-embedding-001")
+        for fallback_m in ("text-embedding-004", "gemini-embedding-001", "embedding-001"):
+            if fallback_m not in models_to_try:
+                models_to_try.append(fallback_m)
 
         last_err = None
         for model_id in models_to_try:

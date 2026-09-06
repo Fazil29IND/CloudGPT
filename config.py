@@ -459,12 +459,12 @@ class Settings(BaseSettings):
         description="Embedding provider: gemini | local | openai | voyage",
     )
     embedding_model: str = Field(
-        default="gemini-embedding-2",
-        description="Embedding model name (e.g. gemini-embedding-2, gemini-embedding-001, BAAI/bge-small-en-v1.5)",
+        default="text-embedding-004",
+        description="Embedding model name (e.g. text-embedding-004, gemini-embedding-001, BAAI/bge-small-en-v1.5)",
     )
     embedding_dimension: int = Field(
-        default=384,
-        description="Embedding vector dimension (384 for drop-in Pinecone compatibility, or 768 / 1536 / 3072 via MRL)",
+        default=768,
+        description="Embedding vector dimension (768 standard for Google text-embedding-004, or 384 / 1536 / 3072 via MRL)",
     )
 
     # ── Qdrant (Primary Vector Database) ────────────────────────────────
