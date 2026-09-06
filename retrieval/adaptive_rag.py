@@ -1267,6 +1267,8 @@ class AdaptiveAdvancedRAGPipeline:
         timings: dict[str, float],
     ) -> Any:
         """Serve an answer-cache hit (exact or semantic) as a PipelineResult."""
+        from api.chat_routes import PipelineResult
+
         if isinstance(cached, dict):
             raw_ans = cached.get("answer", "")
             ans_text = str(raw_ans.get("answer", "") if isinstance(raw_ans, dict) else (raw_ans or ""))

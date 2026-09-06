@@ -7,6 +7,7 @@ to process-local sliding window deque when Redis is not configured.
 
 from __future__ import annotations
 
+import inspect
 import time
 import logging
 from collections import defaultdict, deque
@@ -14,27 +15,6 @@ from collections import defaultdict, deque
 from core.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
-
-
-_SLIDING_WINDOW_LUA = """
-local key = KEYS[1]
-local now = tonumber(ARGV[1])
-local window = tonumber(ARGV[2])
-local maximum = tonumber(ARGV[3])
-local cutoff = now - window
-
-redis.call('ZREMRANGEBYSCORE', key, 0, cutoff)
-local current_count = redis.call('ZCARD', key)
-
-if current_count < maximum then
-    local seq = redis.call('INCR', key .. ':seq')
-    redis.call('ZADD', key, now, tostring(now) .. ':' .. tostring(seq))
-    redis.call('EXPIRE', key, math.ceil(window) + 5)
-    return 1
-else
-    return 0
-end
-"""
 
 
 class SlidingWindowRateLimiter:
@@ -68,16 +48,27 @@ class SlidingWindowRateLimiter:
 
             redis_key = f"ratelimit:{key}"
             now = time.time()
+            cutoff = now - window_seconds
             try:
-                allowed = await redis_client.client.eval(
-                    _SLIDING_WINDOW_LUA,
-                    1,
-                    redis_key,
-                    str(now),
-                    str(window_seconds),
-                    str(maximum),
-                )
-                return bool(int(allowed) == 1)
+                pipe = redis_client.client.pipeline()
+                pipe.zremrangebyscore(redis_key, 0, cutoff)
+                pipe.zcard(redis_key)
+                pipe.zadd(redis_key, {str(now): now})
+                pipe.expire(redis_key, window_seconds + 5)
+                exec_res = pipe.execute()
+                results = await exec_res if inspect.isawaitable(exec_res) else exec_res
+
+                current_count = results[1]
+                if current_count >= maximum:
+                    # Clean up the tentatively added timestamp to eliminate lockout amplification
+                    try:
+                        rem_task = redis_client.client.zrem(redis_key, str(now))
+                        if inspect.isawaitable(rem_task):
+                            await rem_task
+                    except Exception:
+                        pass
+                    return False
+                return True
             except Exception as e:
                 logger.warning("Redis rate limiter error, falling back to local: %s", e)
                 if not hasattr(self, "_fallback_since"):

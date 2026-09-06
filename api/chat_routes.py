@@ -2437,6 +2437,44 @@ async def chat_stream_endpoint(payload: ChatRequest, request: Request) -> Stream
                 history_hash=history_hash,
             )
 
+            # Dual-write to Layer 3 Answer Cache and Semantic Vector Cache
+            _has_attachments = bool(payload.attachments)
+            _is_multiturn = bool(history and len(history) > 1)
+            if (
+                full_answer
+                and not _has_attachments
+                and getattr(pipeline.settings, "enable_semantic_cache", True)
+                and getattr(pipeline.settings, "semantic_cache_enabled", True)
+            ):
+                try:
+                    from core.cache_policy import skip_answer_cache_for_validation
+                    from core.llm_cache import set_cached_answer
+                    from core.semantic_cache import get_semantic_cache
+
+                    _val_dict = getattr(result, "validation", {}) or {}
+                    if not skip_answer_cache_for_validation(_val_dict, pipeline.settings):
+                        await set_cached_answer(
+                            query=payload.query,
+                            response_payload={"answer": full_answer, "sources": sources_dump, "model": model_used},
+                            model=model_used,
+                            provider_filter=payload.provider_filter,
+                            history_hash=history_hash,
+                            ttl_seconds=getattr(pipeline.settings, "redis_cache_ttl_seconds", 3600),
+                        )
+                        if not _is_multiturn:
+                            try:
+                                emb = await pipeline.get_embeddings().embed_query(payload.query)
+                                if emb:
+                                    get_semantic_cache().set(
+                                        emb,
+                                        payload.query,
+                                        intent=classification.get("intent") if isinstance(classification, dict) else None,
+                                    )
+                            except Exception:
+                                pass
+                except Exception as _c_err:
+                    logger.debug("chat_stream.write_through_cache_error: %s", _c_err)
+
             # Generate and stream session title (initial title on first prompt, or refine if topic shifted)
             generated_title = None
             if user_id and session_id:

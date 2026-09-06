@@ -190,7 +190,12 @@ class RazorpayGateway:
             raise BillingConfigurationError(
                 "RazorPay is not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
             )
-        import razorpay
+        try:
+            import razorpay
+        except ImportError as exc:
+            raise BillingConfigurationError(
+                "razorpay package is not installed. Run `pip install razorpay`."
+            ) from exc
 
         self.client = razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
         self.key_id = settings.razorpay_key_id
