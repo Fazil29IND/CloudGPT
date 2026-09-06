@@ -173,6 +173,8 @@ class ChatResponse(BaseModel):
     thinking_summary: str = ""
     pipeline_timings: dict[str, float] = Field(default_factory=dict)
     fallback_pass: str = "none"
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    bundle_zip_url: str | None = None
 
 
 # ─── Latency Budget & Pipeline Result ───────────────────────────────────────
@@ -216,6 +218,8 @@ class PipelineResult:
     # ({"prompt_tokens": int|None, "total_tokens": int|None, ...}). Populated
     # lazily for streams — read only after the token stream is exhausted.
     usage: dict[str, Any] = field(default_factory=dict)
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
+    bundle_zip_url: str | None = None
 
 
 # SSE event types: status, stage, provider_detected, session_title, thinking_token,
@@ -504,13 +508,15 @@ async def generate_with_fallback(
             base_tokens = getattr(pipeline.settings, "chat_max_output_tokens", 4096)
             _t_norm = (tier or "Free").strip().lower()
             if _t_norm in ("max", "apex", "developer", "admin"):
+                base_tokens = max(base_tokens, 16384)
+            elif _t_norm in ("pro", "core"):
                 base_tokens = max(base_tokens, 8192)
             if thinking_level:
                 from llm.thinking import profile_for
 
                 profile = profile_for(thinking_level)
                 if profile.enabled:
-                    max_output_tokens = max(base_tokens, profile.budget_tokens + 8192)
+                    max_output_tokens = max(base_tokens, profile.budget_tokens + base_tokens)
                 else:
                     max_output_tokens = base_tokens
             else:
@@ -520,7 +526,7 @@ async def generate_with_fallback(
 
             profile = profile_for(thinking_level)
             if profile.enabled:
-                max_output_tokens = max(max_output_tokens, profile.budget_tokens + 8192)
+                max_output_tokens = max(max_output_tokens, profile.budget_tokens + max_output_tokens)
 
         result = await llm.generate(
             messages=messages,
