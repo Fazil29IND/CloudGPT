@@ -2158,6 +2158,34 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatResponse:
 
             TOKEN_USAGE_TOTAL.labels(tier=entitlements.plan_key, model=model_used).inc(total_tokens)
             CHAT_REQUESTS_TOTAL.labels(tier=entitlements.plan_key, model=model_used, status="ok", pipeline_type=result.pipeline_type).inc()
+
+            extracted_artifacts: list[dict[str, Any]] = []
+            bundle_zip_url: str | None = None
+            if user_id and answer and requested_mode in ("Pro", "Max"):
+                try:
+                    from api.artifacts import extract_artifacts_from_text, store_artifact_record_and_cache
+                    raw_arts = extract_artifacts_from_text(answer)
+                    for art in raw_arts:
+                        stored_art = await store_artifact_record_and_cache(
+                            user_id=user_id,
+                            session_id=session_id,
+                            filename=art["filename"],
+                            content=art["content"],
+                            mime=art.get("mime", "text/plain"),
+                        )
+                        extracted_artifacts.append({
+                            "id": stored_art["id"],
+                            "filename": stored_art["filename"],
+                            "size": stored_art["size"],
+                            "title": art.get("title", stored_art["filename"]),
+                            "bundle_id": art.get("bundle_id"),
+                            "bundle_title": art.get("bundle_title"),
+                        })
+                    if extracted_artifacts:
+                        bundle_zip_url = f"/api/artifacts/session/{session_id}/zip"
+                except Exception as art_err:
+                    logger.warning("chat_endpoint.artifact_extraction_failed", error=str(art_err))
+
             return ChatResponse(
                 answer=answer,
                 sources=sources,
@@ -2170,6 +2198,8 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatResponse:
                 thinking_summary=thinking_summary,
                 pipeline_timings=result.pipeline_timings,
                 fallback_pass=result.fallback_pass,
+                artifacts=extracted_artifacts,
+                bundle_zip_url=bundle_zip_url,
             )
         finally:
             if redis_client and lock_acquired:
@@ -2526,6 +2556,36 @@ async def chat_stream_endpoint(payload: ChatRequest, request: Request) -> Stream
             TOKEN_USAGE_TOTAL.labels(tier=entitlements.plan_key, model=model_used).inc(total_consumed)
             CHAT_REQUESTS_TOTAL.labels(tier=entitlements.plan_key, model=model_used, status="ok", pipeline_type=result.pipeline_type).inc()
 
+            extracted_artifacts: list[dict[str, Any]] = []
+            bundle_zip_url: str | None = None
+            if user_id and full_answer and requested_mode in ("Pro", "Max"):
+                try:
+                    from api.artifacts import extract_artifacts_from_text, store_artifact_record_and_cache
+                    raw_arts = extract_artifacts_from_text(full_answer)
+                    for art in raw_arts:
+                        stored_art = await store_artifact_record_and_cache(
+                            user_id=user_id,
+                            session_id=session_id,
+                            filename=art["filename"],
+                            content=art["content"],
+                            mime=art.get("mime", "text/plain"),
+                            message_id=assistant_msg_id,
+                        )
+                        art_payload = {
+                            "id": stored_art["id"],
+                            "filename": stored_art["filename"],
+                            "size": stored_art["size"],
+                            "title": art.get("title", stored_art["filename"]),
+                            "bundle_id": art.get("bundle_id"),
+                            "bundle_title": art.get("bundle_title"),
+                        }
+                        extracted_artifacts.append(art_payload)
+                        yield f"data: {json.dumps({'type': 'artifact', 'artifact': art_payload})}\n\n"
+                    if extracted_artifacts:
+                        bundle_zip_url = f"/api/artifacts/session/{session_id}/zip"
+                except Exception as art_err:
+                    logger.warning("chat_stream.artifact_extraction_failed", error=str(art_err))
+
             # Final completion event with source metadata + thinking summary + pipeline timings + message IDs
             usage_after = await asyncio.to_thread(get_token_usage, user_id) if user_id else {}
             thinking_elapsed = (
@@ -2533,7 +2593,7 @@ async def chat_stream_endpoint(payload: ChatRequest, request: Request) -> Stream
                 if thinking_started_at and thinking_finished_at
                 else None
             )
-            yield f"data: {json.dumps({'done': True, 'message_id': assistant_msg_id, 'user_message_id': user_msg_id, 'title': generated_title, 'session_id': session_id, 'sources': sources_dump, 'route': routes, 'classification': classification, 'model_used': model_used, 'pipeline_timings': result.pipeline_timings, 'fallback_pass': result.fallback_pass, 'thinking': {'level': thinking_level, 'thinking_tokens': thinking_tokens, 'elapsed': thinking_elapsed, 'budget': thinking_profile.budget_tokens}, 'usage': {'input': true_input_tokens, 'output': output_tokens, 'thinking': thinking_tokens, 'total_consumed': total_consumed, 'tokens_used_day': usage_after.get('tokens_used_day', 0), 'limit_day': entitlements.tokens_day if entitlements.tokens_day is not None else 'Unlimited', 'tokens_used_month': usage_after.get('tokens_used_month', 0), 'limit_month': entitlements.tokens_month if entitlements.tokens_month is not None else 'Unlimited', 'tokens_used_5h': usage_after.get('tokens_used_5h', 0), 'tokens_used_week': usage_after.get('tokens_used_week', 0), 'is_unlimited': entitlements.unlimited}})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'message_id': assistant_msg_id, 'user_message_id': user_msg_id, 'title': generated_title, 'session_id': session_id, 'sources': sources_dump, 'route': routes, 'classification': classification, 'model_used': model_used, 'pipeline_timings': result.pipeline_timings, 'fallback_pass': result.fallback_pass, 'artifacts': extracted_artifacts, 'bundle_zip_url': bundle_zip_url, 'thinking': {'level': thinking_level, 'thinking_tokens': thinking_tokens, 'elapsed': thinking_elapsed, 'budget': thinking_profile.budget_tokens}, 'usage': {'input': true_input_tokens, 'output': output_tokens, 'thinking': thinking_tokens, 'total_consumed': total_consumed, 'tokens_used_day': usage_after.get('tokens_used_day', 0), 'limit_day': entitlements.tokens_day if entitlements.tokens_day is not None else 'Unlimited', 'tokens_used_month': usage_after.get('tokens_used_month', 0), 'limit_month': entitlements.tokens_month if entitlements.tokens_month is not None else 'Unlimited', 'tokens_used_5h': usage_after.get('tokens_used_5h', 0), 'tokens_used_week': usage_after.get('tokens_used_week', 0), 'is_unlimited': entitlements.unlimited}})}\n\n"
 
         except GeminiQuotaExceeded as quota_exc:
             # Upstream Gemini quota exhausted (429 / RESOURCE_EXHAUSTED).

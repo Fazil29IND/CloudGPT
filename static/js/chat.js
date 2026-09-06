@@ -1938,6 +1938,22 @@ document.addEventListener('DOMContentLoaded', () => {
             message.id || null
           );
         });
+        try {
+          const artResp = await fetch(`/api/artifacts?session_id=${encodeURIComponent(sessionId)}`);
+          if (artResp.ok) {
+            const sessionArts = await artResp.json();
+            if (sessionArts && sessionArts.length > 0 && window.CloudGPTActions) {
+              const assistantMsgs = container.querySelectorAll('.message:not(.user)');
+              const lastAssistant = assistantMsgs[assistantMsgs.length - 1];
+              if (lastAssistant) {
+                sessionArts.forEach((art) => window.CloudGPTActions.renderArtifactCard(art, lastAssistant));
+                if (sessionArts.length >= 2) {
+                  window.CloudGPTActions.renderBundleDownloadBtn(`/api/artifacts/session/${encodeURIComponent(sessionId)}/zip`, sessionArts.length, lastAssistant);
+                }
+              }
+            }
+          }
+        } catch (_) {}
       }
       renderHistory(sessions, currentSearchQuery);
       scrollToBottom();
@@ -2111,6 +2127,13 @@ document.addEventListener('DOMContentLoaded', () => {
           if (data.type === 'memory_updated' && data.key) {
             showMemoryToast(`${data.key}: ${data.value}`);
           }
+          if (data.type === 'artifact' && data.artifact) {
+            if (!assistant) assistant = appendMessage('assistant');
+            const parentMsg = assistant.closest('.message');
+            if (parentMsg && window.CloudGPTActions) {
+              window.CloudGPTActions.renderArtifactCard(data.artifact, parentMsg);
+            }
+          }
           if (data.thinking_token) {
             thinkingWasStreamed = true;
             removeTyping();
@@ -2176,6 +2199,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (!parentMsg.querySelector('.msg-actions.assistant-actions') && window.CloudGPTActions) {
                   parentMsg.append(window.CloudGPTActions.buildAssistantActionBar());
+                }
+                if (data.artifacts && Array.isArray(data.artifacts) && data.artifacts.length > 0 && window.CloudGPTActions) {
+                  data.artifacts.forEach((art) => {
+                    window.CloudGPTActions.renderArtifactCard(art, parentMsg);
+                  });
+                  if (data.artifacts.length >= 2 && data.bundle_zip_url) {
+                    window.CloudGPTActions.renderBundleDownloadBtn(data.bundle_zip_url, data.artifacts.length, parentMsg);
+                  }
                 }
               }
 

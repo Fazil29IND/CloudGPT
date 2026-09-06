@@ -3448,6 +3448,32 @@ body.pricing-body {
   color: #ffffff;
 }
 
+.artifact-bundle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(147, 51, 234, 0.2));
+  border: 1px solid rgba(147, 51, 234, 0.4);
+  border-radius: 8px;
+  color: #ffffff;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: all 0.2s ease;
+}
+
+.artifact-bundle-btn:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.35), rgba(147, 51, 234, 0.35));
+  border-color: rgba(147, 51, 234, 0.7);
+  box-shadow: 0 4px 14px rgba(147, 51, 234, 0.25);
+  color: #ffffff;
+}
+
+
 
 /* ── Modal Dialog Common ── */
 .modal-backdrop {
