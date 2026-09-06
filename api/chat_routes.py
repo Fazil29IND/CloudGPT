@@ -239,8 +239,11 @@ class AgentPipeline:
         self.context_builder = ContextBuilder()
         self.embedding_engine = None
         self.pinecone_manager = None
+        self.vector_manager = None
         self.hybrid_retriever = None
         self.reranker = None
+        self.hnsw_retriever = None
+        self.quake_retriever = None
 
         # Tools
         self.web_search = WebSearchTool()
@@ -1193,6 +1196,8 @@ def _build_pipeline_messages(
     tier: str = "Free",
     model: str = "unknown",
     policy_digest: str | None = None,
+    rag_mode: str | None = None,
+    **kwargs: Any,
 ) -> list[dict]:
     """Assemble the LLM message list from gathered context + history + attachments + summary + user memories."""
     cls_dump = classification.model_dump() if hasattr(classification, "model_dump") else classification
@@ -1211,6 +1216,8 @@ def _build_pipeline_messages(
         tier=tier,
         model=model,
         policy_digest=policy_digest,
+        rag_mode=rag_mode,
+        **kwargs,
     )
     system_msg = messages[0]
     user_msg = messages[1]
@@ -1567,6 +1574,7 @@ async def execute_agent_pipeline(
         session_summary=session_summary,
         user_memories=user_memories,
         tier=tier,
+        rag_mode="lite",
     )
     ctx_sec = time.perf_counter() - t0_ctx
     result.pipeline_timings["context_assembly"] = round(ctx_sec * 1000, 2)

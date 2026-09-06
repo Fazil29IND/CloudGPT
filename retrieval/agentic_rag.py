@@ -1042,6 +1042,9 @@ class AgenticRAGPipeline:
             user_memories=user_memories,
             tier=tier,
             policy_digest=plan_digest,
+            rag_mode="agentic",
+            plan=plan,
+            sub_queries=plan.get("sub_queries") if isinstance(plan, dict) else None,
         )
 
         if emit_event:

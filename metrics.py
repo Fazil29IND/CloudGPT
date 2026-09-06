@@ -220,6 +220,12 @@ CONTEXT_DYNAMIC_SCALING_TOTAL = Counter(
     labelnames=("tier", "reason"),
 )
 
+CONTEXT_BUILDS_BY_RAG_MODE_TOTAL = Counter(
+    "cloudgpt_context_builds_by_rag_mode_total",
+    "Specialized context builds executed by RAG mode and tier.",
+    labelnames=("rag_mode", "tier"),
+)
+
 BILLING_WEBHOOK_ERRORS_TOTAL = Counter(
     "cloudgpt_billing_webhook_errors_total",
     "Billing webhook processing errors by reason.",

@@ -5,10 +5,18 @@ import logging
 from typing import Any
 
 from config import get_settings
-from metrics import CONTEXT_DYNAMIC_SCALING_TOTAL, CONTEXT_U_CURVE_REORDERS, PROMPT_BUDGET_DROPS
+from metrics import (
+    CONTEXT_BUILDS_BY_RAG_MODE_TOTAL,
+    CONTEXT_DYNAMIC_SCALING_TOTAL,
+    CONTEXT_U_CURVE_REORDERS,
+    PROMPT_BUDGET_DROPS,
+)
 from .context_metrics import estimate_tokens, record_prompt_breakdown
 from .system_prompts import (
+    APEX_TIER_SYSTEM_PROMPT,
     COMPARISON_FORMAT,
+    CORE_TIER_SYSTEM_PROMPT,
+    LITE_TIER_SYSTEM_PROMPT,
     PRICING_FORMAT,
     TROUBLESHOOTING_FORMAT,
     get_system_prompt_for_tier,
@@ -93,11 +101,611 @@ class TokenBudget:
         self.remaining = max(0, self.remaining - tokens)
 
 
+class LiteContextEngine:
+    """Specialized Context Engine for Lite Hybrid RAG (Free Tier).
+
+    Principles:
+    - High-density, low-latency, compact context window (baseline 4k, max 8k for attachments).
+    - Packs factual evidence under <verified_cloud_facts> with minimal metadata overhead.
+    - Deterministic, zero-overhead static system prompt for 100% KV-cache reuse.
+    - Explicit verified knowledge boundary to prevent hallucination.
+    """
+
+    def __init__(self, settings: Any = None) -> None:
+        self.settings = settings or get_settings()
+
+    def build(
+        self,
+        query: str,
+        classification: dict[str, Any],
+        rag_results: list[dict[str, Any]] | None = None,
+        internet_results: list[dict[str, Any]] | None = None,
+        pricing_data: list[dict[str, Any]] | None = None,
+        calc_results: dict[str, Any] | None = None,
+        provider_filter: str | None = None,
+        attachment_texts: list[dict[str, Any]] | None = None,
+        max_context_tokens: int | None = None,
+        chat_history: list[dict[str, Any]] | None = None,
+        model: str = "unknown",
+        **kwargs: Any,
+    ) -> list[dict[str, str]]:
+        has_attachments = bool(attachment_texts and len(attachment_texts) > 0)
+        baseline = getattr(self.settings, "lite_context_budget_baseline", 4000)
+        ceiling = getattr(self.settings, "lite_context_budget_max", 8000)
+        total_budget = ceiling if has_attachments else baseline
+        if max_context_tokens and max_context_tokens > 0:
+            total_budget = min(max_context_tokens, total_budget)
+
+        budget = TokenBudget(
+            total_budget,
+            weights={"rag": 0.55, "internet": 0.15, "tools": 0.10, "attachments": 0.20},
+        )
+
+        system_prompt = LITE_TIER_SYSTEM_PROMPT
+        budget.consume(estimate_tokens(system_prompt))
+
+        user_parts: list[str] = [
+            f"USER QUERY: <user_query>{query}</user_query>",
+            f"QUERY INTENT: {classification.get('intent', 'explain')}",
+        ]
+        if provider_filter:
+            user_parts.append(f"ACTIVE CLOUD FILTER: {provider_filter.upper()}")
+        else:
+            providers = classification.get("providers", [])
+            user_parts.append(f"TARGET CLOUD PROVIDERS: {', '.join(providers) or 'All / Multi-Cloud'}")
+
+        # RAG Facts Packing
+        if rag_results:
+            rag_rem = budget.allocate("rag")
+            packed: list[dict[str, Any]] = []
+            for r in rag_results:
+                content = r.get("content", "")
+                t = estimate_tokens(content)
+                if t <= rag_rem:
+                    packed.append(r)
+                    rag_rem -= t
+                elif rag_rem > 200 and not packed:
+                    packed.append({**r, "content": content[:rag_rem * 4] + "…"})
+                    rag_rem = 0
+                    break
+
+            if getattr(self.settings, "enable_attention_u_curve_packing", True) and len(packed) > 2:
+                packed = _reorder_for_attention_u_curve(packed)
+                CONTEXT_U_CURVE_REORDERS.labels(tier="Free").inc()
+
+            fact_lines = ["\n<verified_cloud_facts>"]
+            for idx, r in enumerate(packed, 1):
+                p = (r.get("provider") or "Cloud").upper()
+                s = r.get("service") or "General"
+                sec = r.get("section") or ""
+                fact_lines.append(f"[Fact {idx} | {p} {s}{(' - ' + sec) if sec else ''}]")
+                fact_lines.append(r.get("content", "").strip())
+                fact_lines.append("")
+            fact_lines.append("</verified_cloud_facts>")
+            facts_block = "\n".join(fact_lines)
+            user_parts.append(facts_block)
+            budget.consume(estimate_tokens(facts_block))
+
+        # Verified Cost / Pricing Data
+        if pricing_data or calc_results:
+            cost_lines = ["\n<verified_cost_data>"]
+            if pricing_data:
+                for p in pricing_data[:4]:
+                    sku = p.get("sku") or p.get("service", "Cloud Service")
+                    prov = (p.get("provider") or "Cloud").upper()
+                    hr = p.get("hourly_cost", 0.0)
+                    mo = p.get("monthly_cost", hr * 730.0)
+                    curr = p.get("currency", "USD")
+                    cost_lines.append(f"- [{prov}] {sku}: ${hr:.4f}/hr (${mo:.2f}/mo {curr})")
+            if calc_results:
+                expr = calc_results.get("expression") or calc_results.get("query", "")
+                res = calc_results.get("result") or calc_results.get("formatted", "")
+                cost_lines.append(f"- Calculation: {expr} = {res}")
+            cost_lines.append("</verified_cost_data>")
+            cost_block = "\n".join(cost_lines)
+            user_parts.append(cost_block)
+            budget.consume(estimate_tokens(cost_block))
+
+        # Attachments
+        if attachment_texts:
+            att_rem = budget.allocate("attachments", dynamic_expand=has_attachments)
+            att_lines = ["\n<attached_reference_data>"]
+            att_added = 0
+            for att in attachment_texts:
+                name = att.get("filename", "attachment")
+                content = att.get("text", "")
+                t = estimate_tokens(content)
+                if t <= att_rem:
+                    att_lines.append(f"[{name}]\n{content}\n")
+                    att_rem -= t
+                    att_added += 1
+                elif att_rem > 150:
+                    att_lines.append(f"[{name} (truncated)]\n{content[:att_rem * 4]}…\n")
+                    att_added += 1
+                    break
+            if att_added > 0:
+                att_lines.append("</attached_reference_data>")
+                att_block = "\n".join(att_lines)
+                user_parts.append(att_block)
+                budget.consume(estimate_tokens(att_block))
+
+        # Strict Knowledge Boundary Guardrail
+        user_parts.append(
+            "\nVERIFIED KNOWLEDGE BOUNDARY & CONSTRAINTS:\n"
+            "- Answer directly and factually using solely the verified cloud facts above.\n"
+            "- If a specific command flag, service quota, or architecture parameter is not documented in <verified_cloud_facts>, explicitly state that the detail is not found.\n"
+            "- Provide crisp, production-grade CLI commands, configuration, or explanations with zero conversational filler."
+        )
+        user_parts.append(f"\nCURRENT USER REQUEST: {query}")
+
+        user_content = "\n".join(user_parts)
+        CONTEXT_BUILDS_BY_RAG_MODE_TOTAL.labels(rag_mode="lite", tier="Free").inc()
+
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+
+
+class AgenticContextEngine:
+    """Specialized Context Engine for Agentic RAG (Pro Tier).
+
+    Characteristics:
+    - Multi-step sub-goal planning, iterative tool traces, hierarchical code/infrastructure synthesis.
+    - Context Window: 8,000 tokens baseline, dynamically scaling up to 32,000 tokens.
+    - Plan-Aware Framing: Injects <retrieval_plan> with sub-queries and intent.
+    - Clustered Evidence: Groups chunks into sub-goal / task clusters.
+    - Tool Trace Formatting: Structured <cloud_tool_execution> blocks with explicit units ($/hr, formulas).
+    - Preserves Terraform, YAML, CLI blocks and architectural specifications.
+    """
+
+    def __init__(self, settings: Any = None) -> None:
+        self.settings = settings or get_settings()
+
+    def build(
+        self,
+        query: str,
+        classification: dict[str, Any],
+        rag_results: list[dict[str, Any]] | None = None,
+        internet_results: list[dict[str, Any]] | None = None,
+        pricing_data: list[dict[str, Any]] | None = None,
+        calc_results: dict[str, Any] | None = None,
+        provider_filter: str | None = None,
+        attachment_texts: list[dict[str, Any]] | None = None,
+        max_context_tokens: int | None = None,
+        user_memories: list[dict[str, Any]] | None = None,
+        tier: str = "Pro",
+        model: str = "unknown",
+        chat_history: list[dict[str, Any]] | None = None,
+        plan: dict[str, Any] | None = None,
+        sub_queries: list[str] | None = None,
+        policy_digest: str | None = None,
+        **kwargs: Any,
+    ) -> list[dict[str, str]]:
+        tier_normalized = (tier or "Pro").capitalize()
+        has_attachments = bool(attachment_texts and len(attachment_texts) > 0)
+        is_deep = bool(chat_history and len(chat_history) >= 4)
+        baseline = getattr(self.settings, "agentic_context_budget_baseline", 8000)
+        ceiling = getattr(self.settings, "agentic_context_budget_max", 32000)
+
+        from .provider import calculate_effective_prompt_budget
+
+        if max_context_tokens and max_context_tokens > 0:
+            total_budget = max_context_tokens
+        else:
+            total_budget = calculate_effective_prompt_budget(
+                tier_budget=baseline,
+                model_name=model,
+                tier=tier_normalized,
+                has_attachments=has_attachments,
+                is_deep_workload=is_deep,
+            )
+            total_budget = min(max(total_budget, baseline), ceiling)
+
+        budget = TokenBudget(
+            total_budget,
+            weights={"rag": 0.45, "internet": 0.15, "tools": 0.20, "attachments": 0.20},
+        )
+
+        system_prompt = CORE_TIER_SYSTEM_PROMPT
+        budget.consume(estimate_tokens(system_prompt))
+
+        user_parts: list[str] = [
+            f"USER QUERY: <user_query>{query}</user_query>",
+            f"QUERY INTENT: {classification.get('intent', 'architecture_analysis')}",
+        ]
+
+        # Plan-Aware Scaffolding
+        if plan:
+            plan_lines = ["\n<retrieval_plan>"]
+            plan_lines.append(f"- Strategy: {plan.get('retrieval_strategy', 'agentic_multi_hop')}")
+            plan_lines.append(f"- Intent: {plan.get('intent', 'architecture_design')}")
+            plan_lines.append(f"- Routes: {', '.join(plan.get('routes', []))}")
+            plan_sub = sub_queries or plan.get("sub_queries") or []
+            if plan_sub:
+                plan_lines.append("- Sub-Goals / Decomposed Aspects:")
+                for s in plan_sub[:5]:
+                    plan_lines.append(f"  * {s}")
+            plan_lines.append("</retrieval_plan>")
+            plan_block = "\n".join(plan_lines)
+            user_parts.append(plan_block)
+            budget.consume(estimate_tokens(plan_block))
+
+        # User Memories
+        if user_memories:
+            mem_lines = ["\n<user_preferences>"]
+            for m in user_memories[:6]:
+                k = m.get("memory_key") or m.get("key", "")
+                v = m.get("memory_value") or m.get("value", "")
+                mem_lines.append(f"- {k}: {v}")
+            mem_lines.append("</user_preferences>")
+            mem_block = "\n".join(mem_lines)
+            user_parts.append(mem_block)
+            budget.consume(estimate_tokens(mem_block))
+
+        # Clustered Evidence Matrix
+        if rag_results:
+            rag_rem = budget.allocate("rag")
+            packed: list[dict[str, Any]] = []
+            for r in rag_results:
+                content = r.get("content", "")
+                t = estimate_tokens(content)
+                if t <= rag_rem:
+                    packed.append(r)
+                    rag_rem -= t
+                elif rag_rem > 250 and not packed:
+                    packed.append({**r, "content": content[:rag_rem * 4] + "…"})
+                    rag_rem = 0
+                    break
+
+            if getattr(self.settings, "enable_attention_u_curve_packing", True) and len(packed) > 2:
+                packed = _reorder_for_attention_u_curve(packed)
+                CONTEXT_U_CURVE_REORDERS.labels(tier=tier_normalized).inc()
+
+            ev_lines = ["\n<agentic_evidence_matrix>"]
+            for idx, r in enumerate(packed, 1):
+                p = (r.get("provider") or "Cloud").upper()
+                s = r.get("service") or "Service"
+                sec = r.get("section") or ""
+                ev_lines.append(f"SOURCE {idx} [Provider: {p} | Service: {s}{(' | ' + sec) if sec else ''}]")
+                ev_lines.append(r.get("content", "").strip())
+                ev_lines.append("")
+            ev_lines.append("</agentic_evidence_matrix>")
+            ev_block = "\n".join(ev_lines)
+            user_parts.append(ev_block)
+            budget.consume(estimate_tokens(ev_block))
+
+        # Tool Execution Traces (Pricing & Calculator)
+        if pricing_data or calc_results:
+            tool_lines = ["\n<cloud_tool_executions>"]
+            if pricing_data:
+                tool_lines.append("<tool_result name=\"pricing\">")
+                for p in pricing_data:
+                    prov = (p.get("provider") or "Cloud").upper()
+                    sku = p.get("sku", "")
+                    hr = p.get("hourly_cost", 0.0)
+                    mo = p.get("monthly_cost", hr * 730.0)
+                    curr = p.get("currency", "USD")
+                    tool_lines.append(f"  - [{prov}] {sku}: ${hr:.4f}/hour | ${mo:.2f}/month ({curr})")
+                tool_lines.append("</tool_result>")
+            if calc_results:
+                tool_lines.append("<tool_result name=\"calculator\">")
+                expr = calc_results.get("expression") or calc_results.get("query", "")
+                res = calc_results.get("result") or calc_results.get("formatted", "")
+                tool_lines.append(f"  - Equation: {expr} = {res}")
+                tool_lines.append("</tool_result>")
+            tool_lines.append("</cloud_tool_executions>")
+            tool_block = "\n".join(tool_lines)
+            user_parts.append(tool_block)
+            budget.consume(estimate_tokens(tool_block))
+
+        # Attachments
+        if attachment_texts:
+            att_rem = budget.allocate("attachments", dynamic_expand=has_attachments)
+            att_lines = ["\n<attached_specifications>"]
+            att_added = 0
+            for att in attachment_texts:
+                name = att.get("filename", "spec")
+                content = att.get("text", "")
+                t = estimate_tokens(content)
+                if t <= att_rem:
+                    att_lines.append(f"FILE: {name}\n```\n{content}\n```\n")
+                    att_rem -= t
+                    att_added += 1
+                elif att_rem > 200:
+                    att_lines.append(f"FILE: {name} (truncated)\n```\n{content[:att_rem * 4]}…\n```\n")
+                    att_added += 1
+                    break
+            if att_added > 0:
+                att_lines.append("</attached_specifications>")
+                att_block = "\n".join(att_lines)
+                user_parts.append(att_block)
+                budget.consume(estimate_tokens(att_block))
+
+        # Agent Constraints & Code Preservation
+        user_parts.append(
+            "\nAGENTIC ARCHITECTURE DIRECTIVES:\n"
+            "- Synthesize the evidence to resolve each planned sub-goal sequentially.\n"
+            "- Incorporate pricing and calculator data directly into cost trade-off analyses.\n"
+            "- Provide complete, copy-pasteable Terraform, CLI, or IAM configurations without missing required attributes.\n"
+            "- Conclude with deterministic verification steps."
+        )
+        user_parts.append(f"\nCURRENT USER REQUEST: {query}")
+
+        user_content = "\n".join(user_parts)
+        CONTEXT_BUILDS_BY_RAG_MODE_TOTAL.labels(rag_mode="agentic", tier=tier_normalized).inc()
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+        if policy_digest:
+            policy_block = (
+                "AGENTIC EXECUTION POLICY:\n"
+                + policy_digest
+                + "\n\n"
+            )
+            messages[1]["content"] = policy_block + messages[1]["content"]
+
+        return messages
+
+
+class AdaptiveContextEngine:
+    """Specialized Context Engine for Adaptive Agentic RAG (Max / Apex Tier).
+
+    Characteristics:
+    - Frontier enterprise multi-cloud architecture, HyDE, multi-perspective dimension scoring.
+    - Context Window: 16,000 tokens baseline, dynamically scaling up to 64,000 tokens.
+    - Well-Architected Framework Dimension Matrix: Security, Reliability, Cost, Performance, Operations.
+    - Cross-Cloud Architectural Parity Matrix: Side-by-side AWS ↔ GCP ↔ Azure equivalence.
+    - Live-Verify and Freshness proofs.
+    - Verification Anchors: [Ref: chunk_id] on evidence chunks for claim verification and self-critique.
+    - Working Context Memory: Preserves <working_context_state>.
+    """
+
+    def __init__(self, settings: Any = None) -> None:
+        self.settings = settings or get_settings()
+
+    def build(
+        self,
+        query: str,
+        classification: dict[str, Any],
+        rag_results: list[dict[str, Any]] | None = None,
+        internet_results: list[dict[str, Any]] | None = None,
+        pricing_data: list[dict[str, Any]] | None = None,
+        calc_results: dict[str, Any] | None = None,
+        provider_filter: str | None = None,
+        attachment_texts: list[dict[str, Any]] | None = None,
+        max_context_tokens: int | None = None,
+        user_memories: list[dict[str, Any]] | None = None,
+        tier: str = "Max",
+        model: str = "unknown",
+        chat_history: list[dict[str, Any]] | None = None,
+        transformed: dict[str, Any] | None = None,
+        live_verified: bool = False,
+        policy_digest: str | None = None,
+        **kwargs: Any,
+    ) -> list[dict[str, str]]:
+        tier_normalized = (tier or "Max").capitalize()
+        has_attachments = bool(attachment_texts and len(attachment_texts) > 0)
+        is_deep = bool(chat_history and len(chat_history) >= 4)
+        baseline = getattr(self.settings, "adaptive_context_budget_baseline", 16000)
+        ceiling = getattr(self.settings, "adaptive_context_budget_max", 64000)
+
+        from .provider import calculate_effective_prompt_budget
+
+        if max_context_tokens and max_context_tokens > 0:
+            total_budget = max_context_tokens
+        else:
+            total_budget = calculate_effective_prompt_budget(
+                tier_budget=baseline,
+                model_name=model,
+                tier=tier_normalized,
+                has_attachments=has_attachments,
+                is_deep_workload=is_deep,
+            )
+            total_budget = min(max(total_budget, baseline), ceiling)
+
+        budget = TokenBudget(
+            total_budget,
+            weights={"rag": 0.50, "internet": 0.15, "tools": 0.15, "attachments": 0.20},
+        )
+
+        system_prompt = APEX_TIER_SYSTEM_PROMPT
+        budget.consume(estimate_tokens(system_prompt))
+
+        user_parts: list[str] = [
+            f"USER QUERY: <user_query>{query}</user_query>",
+            f"QUERY INTENT: {classification.get('intent', 'frontier_architecture_synthesis')}",
+        ]
+
+        # Multi-Perspective / Transformed Strategy
+        if transformed:
+            strat = transformed.get("routing_path") or transformed.get("strategy", "adaptive")
+            user_parts.append(f"ADAPTIVE RETRIEVAL STRATEGY: {strat}")
+            perspectives = transformed.get("perspective_queries", [])
+            if perspectives:
+                p_lines = ["<architectural_perspectives>"]
+                for p in perspectives[:4]:
+                    dim = p.get("dimension") or p.get("aspect", "general")
+                    q_text = p.get("query", "")
+                    p_lines.append(f"- Dimension: {dim} -> {q_text}")
+                p_lines.append("</architectural_perspectives>")
+                user_parts.append("\n".join(p_lines))
+
+        # User Memories
+        if user_memories:
+            mem_lines = ["\n<persistent_enterprise_context>"]
+            for m in user_memories:
+                k = m.get("memory_key") or m.get("key", "")
+                v = m.get("memory_value") or m.get("value", "")
+                mem_lines.append(f"- {k}: {v}")
+            mem_lines.append("</persistent_enterprise_context>")
+            user_parts.append("\n".join(mem_lines))
+
+        # Well-Architected Dimension Matrix Evidence Packing
+        if rag_results:
+            rag_rem = budget.allocate("rag")
+            packed: list[dict[str, Any]] = []
+            for r in rag_results:
+                content = r.get("content", "")
+                t = estimate_tokens(content)
+                if t <= rag_rem:
+                    packed.append(r)
+                    rag_rem -= t
+                elif rag_rem > 300 and not packed:
+                    packed.append({**r, "content": content[:rag_rem * 4] + "…"})
+                    rag_rem = 0
+                    break
+
+            if getattr(self.settings, "enable_attention_u_curve_packing", True) and len(packed) > 2:
+                packed = _reorder_for_attention_u_curve(packed)
+                CONTEXT_U_CURVE_REORDERS.labels(tier=tier_normalized).inc()
+
+            ev_lines = ["\n<well_architected_evidence_matrix>"]
+            for idx, r in enumerate(packed, 1):
+                p = (r.get("provider") or "Cloud").upper()
+                s = r.get("service") or "Service"
+                cid = r.get("chunk_id") or f"src_{idx}"
+                sec = r.get("section") or ""
+                ev_lines.append(f"[Ref: {cid}] SOURCE {idx} | {p} {s}{(' | ' + sec) if sec else ''}")
+                ev_lines.append(r.get("content", "").strip())
+                ev_lines.append("")
+            ev_lines.append("</well_architected_evidence_matrix>")
+            ev_block = "\n".join(ev_lines)
+            user_parts.append(ev_block)
+            budget.consume(estimate_tokens(ev_block))
+
+        # Live Verification Proofs
+        if internet_results:
+            net_rem = budget.allocate("internet")
+            live_lines = ["\n<live_documentation_verification>"]
+            live_added = 0
+            for r in internet_results:
+                title = r.get("title", "")
+                url = r.get("url", "")
+                snippet = r.get("content", r.get("snippet", ""))
+                t = estimate_tokens(snippet)
+                if t <= net_rem:
+                    live_lines.append(f"- Verification [{title}] ({url}):\n  {snippet}")
+                    net_rem -= t
+                    live_added += 1
+                elif net_rem > 150:
+                    live_lines.append(f"- Verification [{title}] ({url}):\n  {snippet[:net_rem * 4]}…")
+                    live_added += 1
+                    break
+            if live_added > 0:
+                live_lines.append("</live_documentation_verification>")
+                live_block = "\n".join(live_lines)
+                user_parts.append(live_block)
+                budget.consume(estimate_tokens(live_block))
+
+        # Multi-Cloud Tool & Pricing Analysis
+        if pricing_data or calc_results:
+            cost_lines = ["\n<multi_cloud_cost_analysis>"]
+            if pricing_data:
+                for p in pricing_data:
+                    prov = (p.get("provider") or "Cloud").upper()
+                    sku = p.get("sku", "")
+                    hr = p.get("hourly_cost", 0.0)
+                    mo = p.get("monthly_cost", hr * 730.0)
+                    cost_lines.append(f"- [{prov}] {sku}: ${hr:.4f}/hr | ${mo:.2f}/mo (annualized: ${mo*12:,.2f})")
+            if calc_results:
+                expr = calc_results.get("expression") or calc_results.get("query", "")
+                res = calc_results.get("result") or calc_results.get("formatted", "")
+                cost_lines.append(f"- Cost Formula Model: {expr} = {res}")
+            cost_lines.append("</multi_cloud_cost_analysis>")
+            cost_block = "\n".join(cost_lines)
+            user_parts.append(cost_block)
+            budget.consume(estimate_tokens(cost_block))
+
+        # Attachments
+        if attachment_texts:
+            att_rem = budget.allocate("attachments", dynamic_expand=has_attachments)
+            att_lines = ["\n<enterprise_architecture_attachments>"]
+            att_added = 0
+            for att in attachment_texts:
+                name = att.get("filename", "file")
+                content = att.get("text", "")
+                t = estimate_tokens(content)
+                if t <= att_rem:
+                    att_lines.append(f"ATTACHMENT: {name}\n```\n{content}\n```\n")
+                    att_rem -= t
+                    att_added += 1
+                elif att_rem > 250:
+                    att_lines.append(f"ATTACHMENT: {name} (truncated)\n```\n{content[:att_rem * 4]}…\n```\n")
+                    att_added += 1
+                    break
+            if att_added > 0:
+                att_lines.append("</enterprise_architecture_attachments>")
+                att_block = "\n".join(att_lines)
+                user_parts.append(att_block)
+                budget.consume(estimate_tokens(att_block))
+
+        # Frontier Constraints & Cross-Cloud Parity Directives
+        user_parts.append(
+            "\nFRONTIER SYNTHESIS & CLAIM ATTRIBUTION DIRECTIVES:\n"
+            "- Perform rigorous multi-cloud comparison across AWS, Google Cloud, and Microsoft Azure.\n"
+            "- For each substantive architectural claim, link reasoning to [Ref: chunk_id] anchors.\n"
+            "- Evaluate trade-offs across all 5 Well-Architected Framework pillars.\n"
+            "- Highlight high-availability topologies, disaster recovery RPO/RTO metrics, and security perimeters.\n"
+            "- Conclude with definitive, automated verification code (IaC, CLI, or test assertions)."
+        )
+        user_parts.append(f"\nCURRENT USER REQUEST: {query}")
+
+        user_content = "\n".join(user_parts)
+        CONTEXT_BUILDS_BY_RAG_MODE_TOTAL.labels(rag_mode="adaptive", tier=tier_normalized).inc()
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+        if policy_digest:
+            policy_block = (
+                "DYNAMIC PIPELINE POLICY (runtime retrieval state — follow when answering):\n"
+                + policy_digest
+                + "\n\n"
+            )
+            messages[1]["content"] = policy_block + messages[1]["content"]
+
+        return messages
+
+
 class ContextBuilder:
     """Builds the context and prompt for the LLM based on retrieved data."""
 
     def __init__(self) -> None:
         self.settings = get_settings()
+        self.lite_engine = LiteContextEngine(self.settings)
+        self.agentic_engine = AgenticContextEngine(self.settings)
+        self.adaptive_engine = AdaptiveContextEngine(self.settings)
+
+    def build_lite_hybrid_context(self, *args: Any, **kwargs: Any) -> list[dict[str, str]]:
+        return self.lite_engine.build(*args, **kwargs)
+
+    def build_agentic_context(self, *args: Any, **kwargs: Any) -> list[dict[str, str]]:
+        return self.agentic_engine.build(*args, **kwargs)
+
+    def build_adaptive_context(self, *args: Any, **kwargs: Any) -> list[dict[str, str]]:
+        return self.adaptive_engine.build(*args, **kwargs)
+
+    def build_rag_context(
+        self,
+        rag_mode: str,
+        query: str,
+        classification: dict[str, Any],
+        **kwargs: Any,
+    ) -> list[dict[str, str]]:
+        """Dispatch to the dedicated enterprise context engineering engine."""
+        rag_mode_lower = (rag_mode or "lite").lower()
+        if rag_mode_lower in ("lite", "hybrid", "free"):
+            return self.build_lite_hybrid_context(query=query, classification=classification, **kwargs)
+        elif rag_mode_lower in ("agentic", "core", "pro"):
+            return self.build_agentic_context(query=query, classification=classification, **kwargs)
+        elif rag_mode_lower in ("adaptive", "apex", "max", "developer", "admin"):
+            return self.build_adaptive_context(query=query, classification=classification, **kwargs)
+        else:
+            return self.build_context(query=query, classification=classification, **kwargs)
 
     def build_context(
         self,
@@ -117,6 +725,8 @@ class ContextBuilder:
         model: str = "unknown",
         chat_history: list[dict[str, Any]] | None = None,
         policy_digest: str | None = None,
+        rag_mode: str | None = None,
+        **kwargs: Any,
     ) -> list[dict[str, str]]:
         """
         Build a list of messages (system and user) for the LLM.
@@ -142,6 +752,27 @@ class ContextBuilder:
         Returns:
             A list of messages (dicts with 'role' and 'content' keys).
         """
+        if rag_mode:
+            return self.build_rag_context(
+                rag_mode=rag_mode,
+                query=query,
+                classification=classification,
+                rag_results=rag_results,
+                web_results=web_results,
+                internet_results=internet_results,
+                pricing_data=pricing_data,
+                api_data=api_data,
+                calc_results=calc_results,
+                provider_filter=provider_filter,
+                attachment_texts=attachment_texts,
+                max_context_tokens=max_context_tokens,
+                user_memories=user_memories,
+                tier=tier,
+                model=model,
+                chat_history=chat_history,
+                policy_digest=policy_digest,
+                **kwargs,
+            )
         user_message_parts: list[str] = []
         source_counter = 0
         seen_urls: set[str] = set()

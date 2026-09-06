@@ -905,6 +905,35 @@ class Settings(BaseSettings):
         default=True,
         description="Maintain structured working context state (resources, IDs, CIDRs, architecture decisions) across rolling history compaction.",
     )
+    # ── Dedicated RAG Context Window & Engineering Profiles ─────────────
+    enable_rag_specialized_context: bool = Field(
+        default=True,
+        description="Enable dedicated context engineering and context window sizing for Lite, Agentic, and Adaptive RAG pipelines.",
+    )
+    lite_context_budget_baseline: int = Field(
+        default=4000,
+        description="Dedicated context window baseline for Lite Hybrid RAG (low-latency, high-density).",
+    )
+    lite_context_budget_max: int = Field(
+        default=8000,
+        description="Dedicated maximum context window for Lite Hybrid RAG with attachments.",
+    )
+    agentic_context_budget_baseline: int = Field(
+        default=8000,
+        description="Dedicated context window baseline for Agentic RAG (sub-goal planning, tool traces).",
+    )
+    agentic_context_budget_max: int = Field(
+        default=32000,
+        description="Dedicated maximum context window for Agentic RAG with multi-hop workloads and attachments.",
+    )
+    adaptive_context_budget_baseline: int = Field(
+        default=16000,
+        description="Dedicated context window baseline for Adaptive Agentic RAG (multi-perspective, cross-cloud).",
+    )
+    adaptive_context_budget_max: int = Field(
+        default=64000,
+        description="Dedicated maximum context window for Adaptive Agentic RAG with frontier architectural workloads.",
+    )
     enable_global_context_budget: bool = Field(
         default=True,
         description="Feature flag for global prompt token budgeting across all sections",

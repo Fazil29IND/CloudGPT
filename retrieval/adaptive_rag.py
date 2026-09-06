@@ -1129,6 +1129,9 @@ class AdaptiveAdvancedRAGPipeline:
             user_memories=user_memories,
             tier=tier,
             policy_digest=policy_digest,
+            rag_mode="adaptive",
+            transformed=transformed if isinstance(transformed, dict) else (getattr(transformed, "to_dict", lambda: None)() or transformed),
+            live_verified=live_verified,
         )
 
         if emit_event:
