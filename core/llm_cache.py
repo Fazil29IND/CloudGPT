@@ -337,12 +337,25 @@ async def get_cached_decision(
     query (agentic_plan, adaptive_transform, router_classification).
     ``producer_version`` should be the prompt/version pointer that invalidates
     the decision when its producer changes (e.g. cache_router_version).
+    Degrades safely to L1 in-process memory cache when Redis is unavailable.
     """
-    if scope not in _DECISION_SCOPES or not redis_client.is_available:
+    if scope not in _DECISION_SCOPES:
         return None
 
     settings = settings or get_settings()
     key = _decision_key(scope, query.strip().lower(), producer_version)
+
+    # 1. Check L1 in-process memory cache
+    l1 = get_memory_cache()
+    if getattr(settings, "enable_l1_cache", True):
+        l1_val = l1.get(key)
+        if l1_val is not None:
+            REDIS_CACHE_HITS.labels(layer="decision").inc()
+            logger.debug("L1 Decision Cache Hit for key: %s", key)
+            return l1_val
+
+    if not redis_client.is_available:
+        return None
 
     t0 = time.perf_counter()
     data = await redis_client.get_json(key)
@@ -352,6 +365,8 @@ async def get_cached_decision(
     if data is not None:
         REDIS_CACHE_HITS.labels(layer="decision").inc()
         logger.debug("Decision Cache Hit for key: %s", key)
+        if getattr(settings, "enable_l1_cache", True):
+            l1.set(key, data, ttl=getattr(settings, "memory_cache_ttl_seconds", 60))
     else:
         REDIS_CACHE_MISSES.labels(layer="decision").inc()
     return data
@@ -365,16 +380,73 @@ async def set_cached_decision(
     settings: Any = None,
     ttl_seconds: int = 900,
 ) -> bool:
-    """Cache a structured stage decision with TTL jitter."""
-    if scope not in _DECISION_SCOPES or not redis_client.is_available:
+    """Cache a structured stage decision with TTL jitter and L1 memory fallback."""
+    if scope not in _DECISION_SCOPES:
         return False
 
+    settings = settings or get_settings()
     key = _decision_key(scope, query.strip().lower(), producer_version)
+
+    # Write to L1 in-process memory cache
+    if getattr(settings, "enable_l1_cache", True):
+        l1 = get_memory_cache()
+        l1.set(key, decision, ttl=float(ttl_seconds))
+
+    if not redis_client.is_available:
+        return True
+
     t0 = time.perf_counter()
     success = await redis_client.set_json(key, decision, ex=_jitter_ttl(ttl_seconds))
     elapsed = time.perf_counter() - t0
     REDIS_LATENCY.labels(op="set_decision").observe(elapsed)
     return success
+
+
+# ─── Multi-Level Stage-Aware Cache Helpers (Apex) ──────────────────────────
+
+async def get_cached_stage(stage_key: str, settings: Any = None) -> Optional[Any]:
+    """Retrieve a cached pipeline stage output (e.g. rerank+compress) with L1 fallback."""
+    settings = settings or get_settings()
+    l1 = get_memory_cache()
+    if getattr(settings, "enable_l1_cache", True):
+        l1_res = l1.get(stage_key)
+        if l1_res is not None:
+            return l1_res
+
+    if not redis_client.is_available:
+        return None
+
+    try:
+        data = await redis_client.get_json(stage_key)
+        if data is not None and getattr(settings, "enable_l1_cache", True):
+            l1.set(stage_key, data, ttl=getattr(settings, "memory_cache_ttl_seconds", 60))
+        return data
+    except Exception as e:
+        logger.debug("stage_cache_read_failed error=%s", e)
+        return None
+
+
+async def set_cached_stage(
+    stage_key: str,
+    data: Any,
+    ttl_seconds: int = 1800,
+    settings: Any = None,
+) -> bool:
+    """Cache a pipeline stage output in L1 memory and Redis with TTL jitter."""
+    settings = settings or get_settings()
+    if getattr(settings, "enable_l1_cache", True):
+        l1 = get_memory_cache()
+        l1.set(stage_key, data, ttl=float(ttl_seconds))
+
+    if not redis_client.is_available:
+        return True
+
+    try:
+        actual_ttl = _jitter_ttl(ttl_seconds)
+        return await redis_client.set_json(stage_key, data, ex=actual_ttl)
+    except Exception as e:
+        logger.debug("stage_cache_write_failed error=%s", e)
+        return False
 
 
 # ─── Feedback-Driven Policy Records ─────────────────────────────────────────
@@ -384,35 +456,54 @@ def policy_record_key(query_normalized: str) -> str:
     return f"rag:v2:policy:{digest}"
 
 
-async def get_cached_query_policy(query: str) -> Optional[dict[str, Any]]:
-    """Read the feedback-driven policy record for a query, if any."""
+async def get_cached_query_policy(query: str, settings: Any = None) -> Optional[dict[str, Any]]:
+    """Read the feedback-driven policy record for a query, if any (L1 + Redis)."""
+    normalized = query.strip().lower()
+    key = policy_record_key(normalized)
+    l1 = get_memory_cache()
+    l1_val = l1.get(key)
+    if l1_val is not None:
+        return l1_val
+
     if not redis_client.is_available:
         return None
     try:
-        return await redis_client.get_json(policy_record_key(query.strip().lower()))
+        data = await redis_client.get_json(key)
+        if data is not None:
+            l1.set(key, data, ttl=60.0)
+        return data
     except Exception as e:
         logger.debug("policy_record_read_failed error=%s", e)
         return None
 
 
-async def set_cached_query_policy(query: str, record: dict[str, Any], ttl_seconds: int) -> bool:
-    """Write a feedback-driven policy record for a query."""
+async def set_cached_query_policy(
+    query: str, record: dict[str, Any], ttl_seconds: int, settings: Any = None
+) -> bool:
+    """Write a feedback-driven policy record for a query (L1 + Redis)."""
+    normalized = query.strip().lower()
+    key = policy_record_key(normalized)
+    l1 = get_memory_cache()
+    l1.set(key, record, ttl=float(ttl_seconds))
+
     if not redis_client.is_available:
-        return False
+        return True
     try:
-        return await redis_client.set_json(
-            policy_record_key(query.strip().lower()), record, ex=max(1, int(ttl_seconds))
-        )
+        return await redis_client.set_json(key, record, ex=max(1, int(ttl_seconds)))
     except Exception as e:
         logger.debug("policy_record_write_failed error=%s", e)
         return False
 
 
 async def delete_cached_query_policy(query: str) -> int:
+    normalized = query.strip().lower()
+    key = policy_record_key(normalized)
+    get_memory_cache().invalidate(key)
+
     if not redis_client.is_available:
-        return 0
+        return 1
     try:
-        return await redis_client.delete(policy_record_key(query.strip().lower()))
+        return await redis_client.delete(key)
     except Exception as e:
         logger.debug("policy_record_delete_failed error=%s", e)
         return 0

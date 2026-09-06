@@ -29,7 +29,6 @@ import structlog
 from config import get_settings
 from core.llm_cache import get_cached_query_policy, set_cached_query_policy
 from core.memory_cache import get_memory_cache
-from core.redis_client import redis_client
 from metrics import CACHE_POLICY_EVENTS
 
 logger = structlog.get_logger(__name__)
@@ -70,11 +69,17 @@ def route_cache_policy(
     classification: Any = None,
     tier: str = "Max",
     risk_level: str | None = None,
+    has_attachments: bool = False,
+    chat_history: list[dict] | None = None,
     settings: Any = None,
 ) -> CachePolicyDecision:
     """Decide cache usage for one request from its runtime state (Apex router).
 
     Rules:
+    - ``has_attachments`` → answer caching disabled completely (exact + semantic
+      lookups and answer writes are bypassed to avoid cross-tenant context leaks).
+    - Multi-turn conversation (len(chat_history) > 1) → semantic lookup bypassed
+      (exact lookup preserved with history hash).
     - ``direct_fast`` (exact CLI/syntax) → semantic lookup only at the strict
       direct threshold: near-duplicate CLI questions that differ by a single
       flag must never cross-match an answer.
@@ -87,6 +92,16 @@ def route_cache_policy(
     """
     settings = settings or get_settings()
     decision = CachePolicyDecision()
+
+    if has_attachments:
+        decision.exact_lookup = False
+        decision.semantic_lookup = False
+        decision.answer_cache_write = False
+        decision.reasons.append("has_attachments→answer caches bypassed and writes disabled")
+
+    if chat_history and len(chat_history) > 1:
+        decision.semantic_lookup = False
+        decision.reasons.append("multi_turn_history→semantic lookup bypassed")
 
     if strategy == "direct_fast":
         decision.semantic_threshold = float(

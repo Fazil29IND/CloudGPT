@@ -316,6 +316,7 @@ class AdaptiveAdvancedRAGPipeline:
         tier: str,
         retriever: Any,
         reranker: Any,
+        cache_decision: Any | None = None,
     ) -> tuple[list[RetrievalResult], str]:
         t0 = time.perf_counter()
         prov_key = provider_filter_dict.get("provider") if provider_filter_dict else "all"
@@ -324,16 +325,27 @@ class AdaptiveAdvancedRAGPipeline:
         _corpus_version = getattr(self.settings, "cache_corpus_version", "v1")
         cache_query_key = f"adaptive:{_corpus_version}:{hashlib.sha256(original_query.encode()).hexdigest()[:16]}:{prov_key}:{tier}"
 
-        try:
-            cached = await get_cached_retrieval_result(cache_query_key, prov_key)
-            if cached:
-                elapsed = time.perf_counter() - t0
-                RAG_STAGE_DURATION_SECONDS.labels(stage="adaptive_retrieve", tier=tier).observe(elapsed)
-                return cached, "cached"
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.warning("adaptive_retrieve.cache_check_error", error=str(e))
+        _check_cache = cache_decision is None or getattr(cache_decision, "retrieval_cache", True)
+        if _check_cache:
+            try:
+                cached = await get_cached_retrieval_result(cache_query_key, prov_key)
+                if cached:
+                    elapsed = time.perf_counter() - t0
+                    RAG_STAGE_DURATION_SECONDS.labels(stage="adaptive_retrieve", tier=tier).observe(elapsed)
+                    cached_objs = [
+                        RetrievalResult(
+                            chunk_id=str(r.get("chunk_id", "")),
+                            text=str(r.get("text", r.get("content", ""))),
+                            score=float(r.get("score", 1.0)),
+                            metadata=dict(r.get("metadata", {}) or {}),
+                        ) if isinstance(r, dict) else r
+                        for r in cached
+                    ]
+                    return cached_objs, "cached"
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("adaptive_retrieve.cache_check_error", error=str(e))
 
         query_strings = list(
             dict.fromkeys([transformed["rewritten_query"]] + transformed["expanded_queries"])
@@ -499,14 +511,24 @@ class AdaptiveAdvancedRAGPipeline:
                 logger.warning("context_validator.adaptive_chunks_rejected", tier=tier)
                 candidates = []
 
-        try:
-            await set_cached_retrieval_result(
-                cache_query_key, candidates, prov_key, self.settings, ttl_seconds=21600
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.warning("adaptive_retrieve.cache_set_error", error=str(e))
+        if _check_cache:
+            try:
+                candidates_dicts = [
+                    {
+                        "chunk_id": c.chunk_id,
+                        "text": c.text,
+                        "score": c.score,
+                        "metadata": c.metadata,
+                    }
+                    for c in candidates
+                ]
+                await set_cached_retrieval_result(
+                    cache_query_key, candidates_dicts, prov_key, self.settings, ttl_seconds=21600
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("adaptive_retrieve.cache_set_error", error=str(e))
 
         elapsed = time.perf_counter() - t0
         RAG_STAGE_DURATION_SECONDS.labels(stage="adaptive_retrieve", tier=tier).observe(elapsed)
@@ -713,8 +735,9 @@ class AdaptiveAdvancedRAGPipeline:
         tier: str,
         reranker: Any,
         transformed: dict[str, Any] | AdaptiveQueryRepresentations | None = None,
+        cache_decision: Any | None = None,
     ) -> list[RetrievalResult]:
-        """Adaptive reranking + adaptive compression policy.
+        """Stage 3: Adaptive Reranking & Selective Context Compression.
 
         - Rerank query adapts to the routing strategy: exact-syntax queries are
           reranked with the sparse-preserving representation, conceptual queries
@@ -739,41 +762,41 @@ class AdaptiveAdvancedRAGPipeline:
         _stage_on = bool(
             getattr(self.settings, "enable_apex_stage_caches", True)
             and getattr(self.settings, "enable_adaptive_cache_router", True)
+            and (cache_decision is None or getattr(cache_decision, "stage_caches", True))
         )
         if _stage_on and candidates:
             try:
-                from core.redis_client import redis_client as _redis
+                from core.llm_cache import get_cached_stage
 
-                if _redis.is_available:
-                    _cv = getattr(self.settings, "cache_corpus_version", "v1")
-                    ids_digest = hashlib.sha256(
-                        ",".join(sorted(c.chunk_id for c in candidates)).encode()
-                    ).hexdigest()[:16]
-                    q_digest = hashlib.sha256(f"{strategy}:{query}".encode()).hexdigest()[:16]
-                    stage_key = f"rag:v2:stage:rerank:{_cv}:{q_digest}:{ids_digest}"
-                    cached_stage = await _redis.get_json(stage_key)
-                    if isinstance(cached_stage, list) and cached_stage:
-                        restored = [
-                            RetrievalResult(
-                                chunk_id=str(r.get("chunk_id", "")),
-                                text=str(r.get("text", "")),
-                                score=float(r.get("score", 0.0)),
-                                metadata=dict(r.get("metadata", {}) or {}),
-                            )
-                            for r in cached_stage
-                            if isinstance(r, dict) and r.get("chunk_id")
-                        ]
-                        if restored:
-                            from metrics import CACHE_CASCADE_HITS
+                _cv = getattr(self.settings, "cache_corpus_version", "v1")
+                ids_digest = hashlib.sha256(
+                    ",".join(sorted(c.chunk_id for c in candidates)).encode()
+                ).hexdigest()[:16]
+                q_digest = hashlib.sha256(f"{strategy}:{query}".encode()).hexdigest()[:16]
+                stage_key = f"rag:v2:stage:rerank:{_cv}:{q_digest}:{ids_digest}"
+                cached_stage = await get_cached_stage(stage_key, self.settings)
+                if isinstance(cached_stage, list) and cached_stage:
+                    restored = [
+                        RetrievalResult(
+                            chunk_id=str(r.get("chunk_id", "")),
+                            text=str(r.get("text", "")),
+                            score=float(r.get("score", 0.0)),
+                            metadata=dict(r.get("metadata", {}) or {}),
+                        )
+                        for r in cached_stage
+                        if isinstance(r, dict) and r.get("chunk_id")
+                    ]
+                    if restored:
+                        from metrics import CACHE_CASCADE_HITS
 
-                            CACHE_CASCADE_HITS.labels(tier=tier, layer="stage").inc()
-                            logger.info(
-                                "stage_cache.rerank_hit",
-                                tier=tier,
-                                strategy=strategy,
-                                count=len(restored),
-                            )
-                            return restored
+                        CACHE_CASCADE_HITS.labels(tier=tier, layer="stage").inc()
+                        logger.info(
+                            "stage_cache.rerank_hit",
+                            tier=tier,
+                            strategy=strategy,
+                            count=len(restored),
+                        )
+                        return restored
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -830,6 +853,25 @@ class AdaptiveAdvancedRAGPipeline:
         compressed = [
             self._compress_chunk(query, chunk, strategy=strategy) for chunk in reranked
         ]
+
+        # Apex multi-level stage-aware caching: write compressed output to stage cache
+        if _stage_on and stage_key and compressed:
+            try:
+                from core.llm_cache import set_cached_stage
+
+                to_cache = [
+                    {
+                        "chunk_id": c.chunk_id,
+                        "text": c.text,
+                        "score": c.score,
+                        "metadata": c.metadata,
+                    }
+                    for c in compressed
+                ]
+                stage_ttl = int(getattr(self.settings, "apex_stage_cache_ttl_seconds", 1800))
+                await set_cached_stage(stage_key, to_cache, ttl_seconds=stage_ttl, settings=self.settings)
+            except Exception as e:
+                logger.debug("stage_cache.rerank_write_failed error=%s", e)
 
         elapsed = time.perf_counter() - t0
         RAG_STAGE_DURATION_SECONDS.labels(stage="rerank_compress", tier=tier).observe(elapsed)
@@ -1206,8 +1248,10 @@ class AdaptiveAdvancedRAGPipeline:
         emit_event: Any | None,
         pipeline_type: str,
         timings: dict[str, float],
-    ) -> PipelineResult:
+    ) -> Any:
         """Serve an answer-cache hit (exact or semantic) as a PipelineResult."""
+        from api.chat_routes import PipelineResult
+
         ans_text = cached.get("answer", "")
         ans_sources = cached.get("sources", [])
         ans_model = cached.get("model", "cache")
@@ -1235,6 +1279,13 @@ class AdaptiveAdvancedRAGPipeline:
             pipeline_timings=dict(timings),
             fallback_pass="cache_hit",
             pipeline_type=pipeline_type,
+            validation={
+                "cached": True,
+                "passed": True,
+                "dimensions": {
+                    "grounding": {"passed": True, "score": 1.0, "details": "served_from_cache"},
+                },
+            },
         )
 
     async def run(
