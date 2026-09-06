@@ -162,8 +162,24 @@ class Settings(BaseSettings):
     auth_rate_limit_per_minute: int = Field(default=10, ge=1, le=1000)
     chat_rate_limit_per_minute: int = Field(default=30, ge=1, le=1000)
     billing_rate_limit_per_minute: int = Field(default=20, ge=1, le=1000)
-    upload_rate_limit_per_minute: int = Field(default=10, ge=1, le=1000)
+    upload_rate_limit_per_minute: int = Field(default=20, ge=1, le=1000, description="Upload rate limit per minute")
     enable_cloud_api_tools: bool = Field(default=False)
+    enable_context_safety_boundary: bool = Field(
+        default=True,
+        description="Enforce cryptographic boundary markers and untrusted content isolation in LLM context",
+    )
+    enable_tool_output_normalization: bool = Field(
+        default=True,
+        description="Normalize tool outputs (pricing, live APIs, calculations) before context injection",
+    )
+    evidence_ordering_strategy: str = Field(
+        default="adaptive",
+        description="Evidence ordering strategy: adaptive, u_curve, score_descending, coherence_preserving",
+    )
+    enable_developer_unlimited_bypass: bool = Field(
+        default=True,
+        description="Grant Developer tier unrestricted limits, rate-limit exemptions, and model-ceiling budgets",
+    )
 
     # ── Email (password reset and transactional mail) ────────────────────
     email_enabled: bool = Field(

@@ -1828,11 +1828,6 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatResponse:
     if not user_id:
         raise HTTPException(status_code=401, detail="Please sign in")
 
-    # Chat rate limiting (Redis sliding window)
-    settings = get_settings()
-    if not await rate_limiter.allowed_async(f"chat:{user_id}", settings.chat_rate_limit_per_minute):
-        raise HTTPException(status_code=429, detail="Chat rate limit exceeded. Please wait a moment.")
-
     session_id = payload.session_id
     request_id = payload.request_id or get_request_id(request)
     from db import get_token_usage, increment_token_usage, get_user_by_id, get_active_subscription, reserve_usage, release_reservation, settle_usage, QuotaExceeded
@@ -1842,6 +1837,13 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatResponse:
     usage = await asyncio.to_thread(get_token_usage, user_id)
     subscription = await asyncio.to_thread(get_active_subscription, user_id) if user_id else None
     entitlements = resolve_entitlements(usage.get("tier"), subscription, user_email=user_email)
+
+    # Chat rate limiting (Redis sliding window) - Developer/Unlimited tier enjoys unrestricted access
+    settings = get_settings()
+    is_developer_exempt = (entitlements.unlimited or entitlements.plan_key == "Developer") and getattr(settings, "enable_developer_unlimited_bypass", True)
+    if not is_developer_exempt:
+        if not await rate_limiter.allowed_async(f"chat:{user_id}", settings.chat_rate_limit_per_minute):
+            raise HTTPException(status_code=429, detail="Chat rate limit exceeded. Please wait a moment.")
 
     # Mode validation (supports Apex, Core, Lite)
     raw_mode = (payload.mode or "Lite").strip().lower()
@@ -2180,11 +2182,6 @@ async def chat_stream_endpoint(payload: ChatRequest, request: Request) -> Stream
     if not user_id:
         raise HTTPException(status_code=401, detail="Please sign in")
 
-    # Chat rate limiting (Redis sliding window)
-    settings = get_settings()
-    if not await rate_limiter.allowed_async(f"chat:{user_id}", settings.chat_rate_limit_per_minute):
-        raise HTTPException(status_code=429, detail="Chat rate limit exceeded. Please wait a moment.")
-
     session_id = payload.session_id
     request_id = payload.request_id or get_request_id(request)
     from db import get_token_usage, get_user_by_id, get_active_subscription, reserve_usage, release_reservation, QuotaExceeded
@@ -2194,6 +2191,13 @@ async def chat_stream_endpoint(payload: ChatRequest, request: Request) -> Stream
     usage = await asyncio.to_thread(get_token_usage, user_id)
     subscription = await asyncio.to_thread(get_active_subscription, user_id) if user_id else None
     entitlements = resolve_entitlements(usage.get("tier"), subscription, user_email=user_email)
+
+    # Chat rate limiting (Redis sliding window) - Developer/Unlimited tier enjoys unrestricted access
+    settings = get_settings()
+    is_developer_exempt = (entitlements.unlimited or entitlements.plan_key == "Developer") and getattr(settings, "enable_developer_unlimited_bypass", True)
+    if not is_developer_exempt:
+        if not await rate_limiter.allowed_async(f"chat:{user_id}", settings.chat_rate_limit_per_minute):
+            raise HTTPException(status_code=429, detail="Chat rate limit exceeded. Please wait a moment.")
 
     # Mode validation (supports Apex, Core, Lite)
     raw_mode = (payload.mode or "Lite").strip().lower()
@@ -2522,10 +2526,6 @@ async def upload_attachment(request: Request) -> dict[str, Any]:
     if not user_id:
         raise HTTPException(status_code=401, detail="Please sign in")
 
-    settings = get_settings()
-    if not await rate_limiter.allowed_async(f"upload:{user_id}", settings.upload_rate_limit_per_minute):
-        raise HTTPException(status_code=429, detail="Upload rate limit exceeded. Please wait a moment.")
-
     from db import get_active_subscription, get_token_usage, get_user_by_id
     from core.entitlements import resolve_entitlements
     from file_processor import (
@@ -2540,6 +2540,13 @@ async def upload_attachment(request: Request) -> dict[str, Any]:
     usage = await asyncio.to_thread(get_token_usage, user_id)
     subscription = await asyncio.to_thread(get_active_subscription, user_id) if user_id else None
     entitlements = resolve_entitlements(usage.get("tier"), subscription, user_email=user_email)
+
+    settings = get_settings()
+    is_developer_exempt = (entitlements.unlimited or entitlements.plan_key == "Developer") and getattr(settings, "enable_developer_unlimited_bypass", True)
+    if not is_developer_exempt:
+        upload_limit = getattr(settings, "upload_rate_limit_per_minute", 20)
+        if not await rate_limiter.allowed_async(f"upload:{user_id}", upload_limit):
+            raise HTTPException(status_code=429, detail="Upload rate limit exceeded. Please wait a moment.")
 
     async with request.form() as form:
         upload = form.get("file")

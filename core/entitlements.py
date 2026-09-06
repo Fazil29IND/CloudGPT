@@ -109,6 +109,12 @@ class Entitlements:
     def unlimited(self) -> bool:
         return self.tokens_day is None and self.tokens_month is None
 
+    @property
+    def max_tokens(self) -> int:
+        if self.unlimited:
+            return 1_000_000_000
+        return self.tokens_month or self.tokens_day or 0
+
 
 def resolve_entitlements(
     stored_tier: str | None,
@@ -135,15 +141,15 @@ def resolve_entitlements(
             tokens_week=None,
             web_search=True,
             rag=True,
-            cloud_api=settings.enable_cloud_api_tools,
-            max_file_bytes=20_971_520,
-            max_files=20,
+            cloud_api=True,
+            max_file_bytes=524_288_000,  # 500 MB
+            max_files=1000,              # Unlimited attachments
             allowed_models=["Apex", "Core", "Lite"],
             allowed_thinking_levels=THINKING_APEX,
-            max_image_bytes=52_428_800,
-            max_audio_bytes=104_857_600,
-            tts_chars_per_day=1_000_000,
-            artifact_storage_bytes=10_737_418_240,
+            max_image_bytes=524_288_000,
+            max_audio_bytes=524_288_000,
+            tts_chars_per_day=100_000_000,
+            artifact_storage_bytes=1_099_511_627_776,  # 1 TB
             has_user_memory=True,
         )
 

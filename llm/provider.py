@@ -1305,6 +1305,23 @@ MODEL_INPUT_LIMITS: dict[str, int] = {
     "kimi": 128_000,
 }
 
+MODEL_OUTPUT_LIMITS: dict[str, int] = {
+    "gemini-2.5-pro": 65_536,
+    "gemini-2.5-flash": 65_536,
+    "gemini": 8_192,
+    "claude-3-7": 64_000,
+    "claude-3-5": 8_192,
+    "claude": 8_192,
+    "o1": 65_536,
+    "o3": 100_000,
+    "o4": 100_000,
+    "gpt-4o": 16_384,
+    "gpt-4": 8_192,
+    "deepseek-r1": 8_192,
+    "deepseek": 8_192,
+    "qwen": 8_192,
+}
+
 
 def get_model_input_limit(model_name: str | None) -> int:
     """Return max input context window limit for a model family."""
@@ -1317,30 +1334,56 @@ def get_model_input_limit(model_name: str | None) -> int:
     return 32_000
 
 
+def get_model_output_reservation(model_name: str | None, thinking_budget: int = 0) -> int:
+    """
+    Dynamically reserves generation headroom based on target model family
+    and active thinking budget to prevent prompt context from crowding out output.
+    """
+    if not model_name:
+        return max(4096, 4096 + thinking_budget)
+    m = model_name.lower()
+    base_res = 4096
+    for prefix, limit in MODEL_OUTPUT_LIMITS.items():
+        if prefix in m:
+            base_res = min(limit, max(4096, limit // 4))
+            break
+    return max(base_res, 4096 + thinking_budget)
+
+
 def calculate_effective_prompt_budget(
     tier_budget: int,
     model_name: str | None = None,
-    max_output_tokens: int = 4096,
+    max_output_tokens: int | None = 4096,
     thinking_budget: int = 0,
     tier: str | None = None,
     has_attachments: bool = False,
     is_deep_workload: bool = False,
 ) -> int:
     """
-    Calculate effective prompt budget taking into account:
-    1. Base tier budget (Free: 4k, Pro: 7k, Max: 12k).
-    2. Dynamic workload expansion (Pro -> 32k, Max -> 64k) when heavy attachments,
-       deep multi-turn context, or complex multi-cloud workloads are detected,
-       guarded by enable_dynamic_context_scaling setting.
+    Calculate effective prompt budget ceiling taking into account:
+    1. Base tier budget ceiling (Free: 4k-8k, Pro: 8k-32k, Max: 16k-64k, Developer: full model limit).
+    2. Dynamic output token headroom reserved per model family and thinking budget.
     3. Model-specific context window input limits (e.g. Gemini 1M, Claude 200k, GPT-4 128k).
-    4. Headroom clamp: clamp = min(budget, model_input_limit - output_tokens - thinking_budget).
+    4. For Developer tier, ceiling expands directly to the maximum physical model limit.
     """
     settings = get_settings()
     effective_budget = tier_budget
 
+    # Dynamically calculate output reservation if not explicitly provided or default 4096
+    if max_output_tokens is None or max_output_tokens == 4096:
+        output_reservation = get_model_output_reservation(model_name, thinking_budget)
+    else:
+        output_reservation = max_output_tokens + thinking_budget
+
+    tier_norm = tier.capitalize() if tier else ""
+
+    # Developer Tier: Unlimited context capability scaling up to physical model input limit!
+    if tier_norm == "Developer":
+        model_limit = get_model_input_limit(model_name)
+        return max(1000, model_limit - output_reservation)
+
     if getattr(settings, "enable_dynamic_context_scaling", True) and tier:
-        tier_norm = tier.capitalize()
-        if tier_norm in ("Pro", "Max", "Developer") and (has_attachments or is_deep_workload):
+        if tier_norm in ("Pro", "Max") and (has_attachments or is_deep_workload):
             if tier_norm == "Pro":
                 expanded_cap = getattr(settings, "prompt_budget_pro_expanded", 32000)
             else:
@@ -1348,7 +1391,8 @@ def calculate_effective_prompt_budget(
             effective_budget = max(effective_budget, expanded_cap)
 
     model_limit = get_model_input_limit(model_name)
-    headroom = max(1000, model_limit - max_output_tokens - thinking_budget)
+    headroom = max(1000, model_limit - output_reservation)
     return min(effective_budget, headroom)
+
 
 
