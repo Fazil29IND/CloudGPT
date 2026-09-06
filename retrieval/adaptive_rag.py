@@ -725,12 +725,61 @@ class AdaptiveAdvancedRAGPipeline:
         - Compression thresholds adapt per strategy.
         """
         t0 = time.perf_counter()
+
+        # Apex multi-level stage-aware caching — Stage 3: the rerank+compress
+        # output is cached keyed by (strategy, query, candidate id set), so
+        # near-identical retrieval sets skip the cross-encoder entirely.
         strategy = None
         if transformed:
             try:
                 strategy = transformed.get("routing_path") or transformed.get("strategy")
             except Exception:
                 strategy = None
+        stage_key: str | None = None
+        _stage_on = bool(
+            getattr(self.settings, "enable_apex_stage_caches", True)
+            and getattr(self.settings, "enable_adaptive_cache_router", True)
+        )
+        if _stage_on and candidates:
+            try:
+                from core.redis_client import redis_client as _redis
+
+                if _redis.is_available:
+                    _cv = getattr(self.settings, "cache_corpus_version", "v1")
+                    ids_digest = hashlib.sha256(
+                        ",".join(sorted(c.chunk_id for c in candidates)).encode()
+                    ).hexdigest()[:16]
+                    q_digest = hashlib.sha256(f"{strategy}:{query}".encode()).hexdigest()[:16]
+                    stage_key = f"rag:v2:stage:rerank:{_cv}:{q_digest}:{ids_digest}"
+                    cached_stage = await _redis.get_json(stage_key)
+                    if isinstance(cached_stage, list) and cached_stage:
+                        restored = [
+                            RetrievalResult(
+                                chunk_id=str(r.get("chunk_id", "")),
+                                text=str(r.get("text", "")),
+                                score=float(r.get("score", 0.0)),
+                                metadata=dict(r.get("metadata", {}) or {}),
+                            )
+                            for r in cached_stage
+                            if isinstance(r, dict) and r.get("chunk_id")
+                        ]
+                        if restored:
+                            from metrics import CACHE_CASCADE_HITS
+
+                            CACHE_CASCADE_HITS.labels(tier=tier, layer="stage").inc()
+                            logger.info(
+                                "stage_cache.rerank_hit",
+                                tier=tier,
+                                strategy=strategy,
+                                count=len(restored),
+                            )
+                            return restored
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug("stage_cache.rerank_lookup_failed error=%s", e)
+                stage_key = None
+
         adaptive_enabled = bool(getattr(self.settings, "enable_adaptive_reranking", True) and strategy)
 
         if not candidates:
@@ -1147,6 +1196,46 @@ class AdaptiveAdvancedRAGPipeline:
             ))
 
         return all_results
+
+    def _serve_cached_answer(
+        self,
+        cached: dict[str, Any],
+        query: str,
+        tier: str,
+        stream: bool,
+        emit_event: Any | None,
+        pipeline_type: str,
+        timings: dict[str, float],
+    ) -> PipelineResult:
+        """Serve an answer-cache hit (exact or semantic) as a PipelineResult."""
+        ans_text = cached.get("answer", "")
+        ans_sources = cached.get("sources", [])
+        ans_model = cached.get("model", "cache")
+
+        if stream and emit_event:
+            pass  # stage events already emitted by the caller's flow
+
+        def _token_stream() -> AsyncGenerator[str, None]:
+            async def _gen() -> AsyncGenerator[str, None]:
+                chunk_size = 25
+                for i in range(0, len(ans_text), chunk_size):
+                    yield ans_text[i:i + chunk_size]
+                    await asyncio.sleep(0)
+            return _gen()
+
+        timings.setdefault("cache_route", 0.0)
+        return PipelineResult(
+            answer=ans_text,
+            token_stream=_token_stream() if stream else None,
+            routes=["RAG"],
+            confidence=0.98,
+            classification={"intent": "cached", "cache_layer": pipeline_type},
+            sources=ans_sources,
+            model_used=ans_model,
+            pipeline_timings=dict(timings),
+            fallback_pass="cache_hit",
+            pipeline_type=pipeline_type,
+        )
 
     async def run(
         self,
@@ -1597,6 +1686,38 @@ class AdaptiveAdvancedRAGPipeline:
             citation_mgr=citation_mgr,
             validation_out=validation_out,
         )
+
+        # Apex answer-cache write — permitted only when the adaptive cache
+        # router allows it and Layer-4 validation did not flag the answer.
+        if not stream and cache_decision is not None and cache_decision.answer_cache_write and answer_or_stream:
+            try:
+                from core.cache_policy import answer_write_ttl, skip_answer_cache_for_validation
+                from core.llm_cache import set_cached_answer
+                from core.semantic_cache import get_semantic_cache
+
+                if not skip_answer_cache_for_validation(validation_out, self.settings):
+                    base_ttl = int(getattr(self.settings, "redis_cache_ttl_seconds", 3600))
+                    await set_cached_answer(
+                        query=query,
+                        response_payload={
+                            "answer": answer_or_stream,
+                            "sources": [s.model_dump() for s in citation_mgr.get_sources()],
+                            "model": model_used,
+                        },
+                        model=model_used,
+                        provider_filter=provider_filter,
+                        ttl_seconds=answer_write_ttl(base_ttl, query, _policy_record, self.settings),
+                        settings=self.settings,
+                    )
+                    if _router_embedding:
+                        get_semantic_cache().set(
+                            _router_embedding, query,
+                            intent=getattr(classification, "intent", None),
+                        )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug("adaptive_cache.answer_write_failed error=%s", e)
 
         sources_dump = [s.model_dump() for s in citation_mgr.get_sources()]
 
