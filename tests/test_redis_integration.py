@@ -128,7 +128,7 @@ async def test_llm_cache_hit_and_miss():
             "model_used": "gemini",
         }
         await set_cached_llm_response("Explain DynamoDB", expected_response, model="Max")
-        mock_rc.set_json.assert_called_once()
+        assert mock_rc.set_json.call_count == 2  # Model-specific + canonical dual write
 
         mock_rc.get_json.return_value = expected_response
         hit = await get_cached_llm_response("Explain DynamoDB", model="Max")
