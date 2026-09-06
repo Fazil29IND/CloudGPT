@@ -108,16 +108,47 @@ class StripeGateway:
         customer = stripe.Customer.create(email=email, metadata={"cloudgpt_user_id": str(user_id)})
         return str(customer.id)
 
-    def create_checkout(self, *, customer_id: str, price_id: str, success_url: str, cancel_url: str, user_id: int) -> str:
+    def create_checkout(
+        self,
+        *,
+        customer_id: str,
+        price_id: str | None,
+        success_url: str,
+        cancel_url: str,
+        user_id: int,
+        plan_key: str = "pro",
+        interval: str = "month",
+        amount_cents: int = 2900,
+        currency: str = "usd",
+    ) -> str:
+        if price_id:
+            line_items = [{"price": price_id, "quantity": 1}]
+        else:
+            line_items = [
+                {
+                    "price_data": {
+                        "currency": currency,
+                        "unit_amount": amount_cents,
+                        "product_data": {
+                            "name": f"CloudGPT {plan_key.capitalize()} Plan",
+                            "description": f"CloudGPT {plan_key.capitalize()} Subscription ({interval})",
+                        },
+                        "recurring": {"interval": interval},
+                    },
+                    "quantity": 1,
+                }
+            ]
+
         session = stripe.checkout.Session.create(
             customer=customer_id,
             mode="subscription",
-            line_items=[{"price": price_id, "quantity": 1}],
+            line_items=line_items,
             success_url=success_url,
             cancel_url=cancel_url,
             client_reference_id=str(user_id),
-            metadata={"cloudgpt_user_id": str(user_id)},
-            subscription_data={"metadata": {"cloudgpt_user_id": str(user_id)}},
+            metadata={"cloudgpt_user_id": str(user_id), "plan": plan_key, "interval": interval},
+            subscription_data={"metadata": {"cloudgpt_user_id": str(user_id), "plan": plan_key, "interval": interval}},
+            allow_promotion_codes=True,
         )
         if not session.url:
             raise RuntimeError("Payment provider did not return a checkout URL")
@@ -480,9 +511,7 @@ class BillingService:
                 "theme_color": "#09090b",
             }
 
-        # Stripe path (unchanged)
-        if not offer.price_id:
-            raise BillingConfigurationError("This plan is not available for checkout")
+        # Stripe path
         gateway = self._gateway()
         customer = await asyncio.to_thread(db.get_billing_customer, user["id"], gateway.provider)
         if customer:
@@ -490,6 +519,11 @@ class BillingService:
         else:
             customer_id = await asyncio.to_thread(gateway.create_customer, email=user["email"], user_id=user["id"])
             await asyncio.to_thread(db.upsert_billing_customer, user["id"], gateway.provider, customer_id)
+
+        amount_cents = 2900 if plan_key == "pro" else 7900
+        if interval == "year":
+            amount_cents *= 10
+
         return await asyncio.to_thread(
             gateway.create_checkout,
             customer_id=customer_id,
@@ -497,6 +531,9 @@ class BillingService:
             success_url=self.settings.billing_success_url,
             cancel_url=self.settings.billing_cancel_url,
             user_id=user["id"],
+            plan_key=plan_key,
+            interval=interval,
+            amount_cents=amount_cents,
         )
 
     async def verify_and_activate(
@@ -559,12 +596,17 @@ class BillingService:
         }
 
     def _plan_from_subscription(self, subscription: dict[str, Any]) -> str | None:
+        meta = subscription.get("metadata") or {}
+        meta_plan = meta.get("plan") or meta.get("cloudgpt_plan")
+        if meta_plan and str(meta_plan).lower() in ("pro", "max", "lite"):
+            return str(meta_plan).lower()
+
         prices = subscription.get("items", {}).get("data", [])
         price_id = next((item.get("price", {}).get("id") for item in prices if item.get("price", {}).get("id")), None)
         for offer in self.offers():
             if offer.price_id and offer.price_id == price_id:
                 return offer.key
-        return None
+        return "pro"
 
     @staticmethod
     def _timestamp(value: Any) -> datetime | None:

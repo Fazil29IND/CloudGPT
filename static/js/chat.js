@@ -684,6 +684,41 @@ document.addEventListener('DOMContentLoaded', () => {
     if (settingsModal) settingsModal.classList.add('hidden');
   }
 
+  const settingsTabMeta = {
+    account: {
+      title: 'Account',
+      desc: 'Manage your profile, credentials, and authentication.'
+    },
+    subscription: {
+      title: 'Subscription & Usage',
+      desc: 'Live quotas, token allowances, and plan entitlements.'
+    },
+    model: {
+      title: 'Model & Reasoning',
+      desc: 'Configure AI reasoning depth, default model, and system prompts.'
+    },
+    cloud: {
+      title: 'Cloud & Tooling',
+      desc: 'Infrastructure ecosystem, target regions, IaC preferences, and RAG.'
+    },
+    preferences: {
+      title: 'Preferences & UI',
+      desc: 'Localization, interface themes, token meters, and rendering.'
+    },
+    memory: {
+      title: 'Memory & Context',
+      desc: 'Durable architectural constraints and preferences retained across sessions.'
+    },
+    security: {
+      title: 'Security & Data',
+      desc: 'Authentication methods, session details, and conversation export.'
+    },
+    about: {
+      title: 'About & Shortcuts',
+      desc: 'System architecture, keybindings, and legal disclosures.'
+    }
+  };
+
   function switchSettingsTab(tab) {
     currentSettingsTab = tab;
     settingsTabs.forEach((t) => {
@@ -696,6 +731,23 @@ document.addEventListener('DOMContentLoaded', () => {
       p.classList.toggle('active', isActive);
       p.classList.toggle('hidden', !isActive);
     });
+
+    const meta = settingsTabMeta[tab] || { title: 'Settings', desc: '' };
+    const titleEl = document.getElementById('settings-section-title');
+    const descEl = document.getElementById('settings-section-subtitle');
+    if (titleEl) titleEl.textContent = meta.title;
+    if (descEl) descEl.textContent = meta.desc;
+
+    // Reset search on tab switch
+    const searchInput = document.getElementById('settings-search-input');
+    if (searchInput && searchInput.value) {
+      searchInput.value = '';
+      const activePanel = document.querySelector(`.settings-panel[data-panel="${tab}"]`);
+      if (activePanel) {
+        activePanel.querySelectorAll('.settings-card, .settings-group, .settings-toggle-row').forEach(el => el.style.display = '');
+      }
+    }
+
     if (tab === 'memory') loadSettingsMemory();
     if (tab === 'subscription') loadSettingsSubscription();
   }
@@ -708,6 +760,38 @@ document.addEventListener('DOMContentLoaded', () => {
   if (settingsModal) {
     settingsModal.addEventListener('click', (e) => {
       if (e.target === settingsModal) closeSettingsModal();
+    });
+  }
+
+  // Settings real-time search filtering
+  const settingsSearchInput = document.getElementById('settings-search-input');
+  if (settingsSearchInput) {
+    settingsSearchInput.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const activePanel = document.querySelector('.settings-panel.active');
+      if (!activePanel) return;
+      const cards = activePanel.querySelectorAll('.settings-card');
+      cards.forEach(card => {
+        if (!q) {
+          card.style.display = '';
+          card.querySelectorAll('.settings-group, .settings-toggle-row').forEach(row => row.style.display = '');
+        } else {
+          const cardText = card.textContent.toLowerCase();
+          if (cardText.includes(q)) {
+            card.style.display = '';
+            card.querySelectorAll('.settings-group, .settings-toggle-row').forEach(row => {
+              const rowText = row.textContent.toLowerCase();
+              row.style.display = rowText.includes(q) ? '' : 'none';
+            });
+            const anyVisible = Array.from(card.querySelectorAll('.settings-group, .settings-toggle-row')).some(r => r.style.display !== 'none');
+            if (!anyVisible) {
+              card.querySelectorAll('.settings-group, .settings-toggle-row').forEach(row => row.style.display = '');
+            }
+          } else {
+            card.style.display = 'none';
+          }
+        }
+      });
     });
   }
 
@@ -911,7 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Settings: Preferences tab
+  // Settings: Preferences tab & Extended Configuration
   function initPreferences() {
     const app = document.querySelector('.app-container');
     if (!app) return;
@@ -921,6 +1005,30 @@ document.addEventListener('DOMContentLoaded', () => {
       const raw = app.dataset.userSettings || '{}';
       Object.assign(savedPrefs, JSON.parse(raw));
     } catch {}
+
+    const customInstArea = document.getElementById('pref-custom-instructions');
+    if (customInstArea && savedPrefs.custom_instructions) {
+      customInstArea.value = savedPrefs.custom_instructions;
+    }
+
+    const saveInstructionsBtn = document.getElementById('settings-save-instructions-btn');
+    const instructionsFeedback = document.getElementById('settings-instructions-feedback');
+    if (saveInstructionsBtn && customInstArea) {
+      saveInstructionsBtn.addEventListener('click', async () => {
+        saveInstructionsBtn.disabled = true;
+        saveInstructionsBtn.textContent = 'Saving…';
+        const val = customInstArea.value.trim();
+        try {
+          await savePref('custom_instructions', val);
+          showSettingsFeedback(instructionsFeedback, 'success', 'Instructions saved.');
+        } catch {
+          showSettingsFeedback(instructionsFeedback, 'error', 'Failed to save instructions.');
+        } finally {
+          saveInstructionsBtn.disabled = false;
+          saveInstructionsBtn.textContent = 'Save Instructions';
+        }
+      });
+    }
 
     prefToggles.forEach((btn) => {
       const key = btn.dataset.prefKey || btn.closest('[data-pref-key]')?.dataset.prefKey;
@@ -942,7 +1050,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const key = sel.dataset.prefKey;
       const val = savedPrefs[key] !== undefined ? savedPrefs[key] : '';
       if (val) sel.value = val;
+      applyPrefEffect(key, sel.value);
       sel.addEventListener('change', async () => {
+        applyPrefEffect(key, sel.value);
         await savePref(key, sel.value);
       });
     });
@@ -955,6 +1065,16 @@ document.addEventListener('DOMContentLoaded', () => {
       show_pipeline_stages: true,
       always_web_search: false,
       compact_messages: false,
+      live_cloud_tools: true,
+      code_line_numbers: true,
+      stream_speed: true,
+      audio_autoplay: false,
+      rag_search_mode: 'hybrid',
+      primary_cloud: 'multi',
+      preferred_iac: 'terraform',
+      theme_mode: 'obsidian',
+      default_model: 'auto',
+      default_thinking: 'auto',
     };
     return defaults[key] ?? false;
   }
@@ -971,6 +1091,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (key === 'show_pipeline_stages') {
       app.dataset.showPipeline = String(value);
+    }
+    if (key === 'theme_mode') {
+      document.body.dataset.theme = value;
     }
   }
 

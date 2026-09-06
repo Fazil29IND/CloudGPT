@@ -15,7 +15,7 @@ from .context_metrics import estimate_tokens
 logger = logging.getLogger(__name__)
 
 COMPACTION_PROMPT = """You are a concise technical summarizer for CloudGPT, an AI cloud architect assistant.
-Your task is to update or generate a concise running summary of older conversation turns that are being archived from the active context window.
+Your task is to update or generate a concise running summary and structured working context of older conversation turns that are being archived from the active context window.
 
 INVARIANTS TO PRESERVE:
 1. User decisions and stated cloud constraints (e.g. cloud provider, region, VPC setup, compliance requirements).
@@ -24,8 +24,18 @@ INVARIANTS TO PRESERVE:
 4. Unresolved questions or pending tasks.
 
 OUTPUT FORMAT:
-- A brief bulleted summary under 400 words.
-- Focus strictly on technical facts and decisions. Do not include conversational pleasantries.
+Provide the running context in two sections:
+
+<working_context_state>
+- Cloud Providers & Regions: [e.g. AWS us-east-1, GCP us-central1]
+- Resources & CIDRs: [e.g. 10.0.0.0/16, vpc-0a1b2c, gke-prod-cluster]
+- Key Technical Decisions: [e.g. EKS over ECS due to existing Helm charts, Terraform for IaC]
+- Pending / Open Tasks: [e.g. Needs NAT gateway configuration for private subnets]
+</working_context_state>
+
+<session_narrative>
+- Brief bulleted summary under 300 words focusing strictly on technical facts and decisions.
+</session_narrative>
 
 {previous_summary_block}
 
@@ -37,7 +47,8 @@ UPDATED RUNNING SUMMARY:"""
 
 def trim_history_by_tokens(
     messages: list[dict[str, Any]],
-    max_tokens: int,
+    max_tokens: int | None = None,
+    tier: str = "Free",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Trim chat history messages to stay within max_tokens budget.
@@ -46,13 +57,26 @@ def trim_history_by_tokens(
 
     Args:
         messages: Chronological list of message dicts ({'role': ..., 'content': ...}).
-        max_tokens: Maximum tokens allowed for chat history.
+        max_tokens: Maximum tokens allowed for chat history (if None or <=0, resolved via tier).
+        tier: User tier ('Free', 'Pro', 'Max', 'Developer') used when max_tokens is None.
 
     Returns:
         (kept_messages, dropped_messages) — both in chronological order.
     """
-    if not messages or max_tokens <= 0:
-        return [], list(messages or [])
+    if max_tokens is None or max_tokens <= 0:
+        from config import get_settings
+
+        settings = get_settings()
+        tier_norm = (tier or "Free").capitalize()
+        if tier_norm == "Pro":
+            max_tokens = getattr(settings, "history_token_budget_pro", 4000)
+        elif tier_norm in ("Max", "Developer"):
+            max_tokens = getattr(settings, "history_token_budget_max", 8000)
+        else:
+            max_tokens = getattr(settings, "history_token_budget", 1500)
+
+    if not messages:
+        return [], []
 
     kept: list[dict[str, Any]] = []
     dropped: list[dict[str, Any]] = []

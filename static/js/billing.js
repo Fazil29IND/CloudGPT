@@ -1,6 +1,6 @@
 (() => {
   const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
-  const paymentProvider = document.querySelector('meta[name="payment-provider"]')?.content || 'razorpay';
+  const paymentProvider = document.querySelector('meta[name="payment-provider"]')?.content || 'stripe';
   const notificationBox = document.getElementById('billing-notification');
   const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': token };
 

@@ -1085,10 +1085,15 @@ class AdaptiveAdvancedRAGPipeline:
         if tier_context_budget:
             # Dynamic budget: strategy-aware scaling before the model cap calc.
             tier_context_budget = int(tier_context_budget * float(evidence_stats.get("budget_multiplier", 1.0)))
+            has_attachments = bool(attachment_texts and len(attachment_texts) > 0)
+            is_deep = bool(chat_history and len(chat_history) >= 4)
             tier_context_budget = calculate_effective_prompt_budget(
                 tier_budget=tier_context_budget,
-                model_name=None,
+                model_name=getattr(self.settings, "gemini_model_generator", None),
                 max_output_tokens=getattr(self.settings, "chat_max_output_tokens", 4096),
+                tier=tier,
+                has_attachments=has_attachments,
+                is_deep_workload=is_deep,
             )
 
         # Apex Layer 4 — dynamic policy-aware prompt.

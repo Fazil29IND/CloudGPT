@@ -1297,6 +1297,9 @@ MODEL_INPUT_LIMITS: dict[str, int] = {
     "gemini": 1_000_000,
     "claude": 200_000,
     "gpt-4": 128_000,
+    "o1": 200_000,
+    "o3": 200_000,
+    "o4": 200_000,
     "deepseek": 64_000,
     "qwen": 32_000,
     "kimi": 128_000,
@@ -1319,13 +1322,33 @@ def calculate_effective_prompt_budget(
     model_name: str | None = None,
     max_output_tokens: int = 4096,
     thinking_budget: int = 0,
+    tier: str | None = None,
+    has_attachments: bool = False,
+    is_deep_workload: bool = False,
 ) -> int:
     """
-    Apply per-model window clamp:
-    clamp = min(tier_budget, model_input_limit - output_tokens - thinking_budget)
+    Calculate effective prompt budget taking into account:
+    1. Base tier budget (Free: 4k, Pro: 7k, Max: 12k).
+    2. Dynamic workload expansion (Pro -> 32k, Max -> 64k) when heavy attachments,
+       deep multi-turn context, or complex multi-cloud workloads are detected,
+       guarded by enable_dynamic_context_scaling setting.
+    3. Model-specific context window input limits (e.g. Gemini 1M, Claude 200k, GPT-4 128k).
+    4. Headroom clamp: clamp = min(budget, model_input_limit - output_tokens - thinking_budget).
     """
+    settings = get_settings()
+    effective_budget = tier_budget
+
+    if getattr(settings, "enable_dynamic_context_scaling", True) and tier:
+        tier_norm = tier.capitalize()
+        if tier_norm in ("Pro", "Max", "Developer") and (has_attachments or is_deep_workload):
+            if tier_norm == "Pro":
+                expanded_cap = getattr(settings, "prompt_budget_pro_expanded", 32000)
+            else:
+                expanded_cap = getattr(settings, "prompt_budget_max_expanded", 64000)
+            effective_budget = max(effective_budget, expanded_cap)
+
     model_limit = get_model_input_limit(model_name)
     headroom = max(1000, model_limit - max_output_tokens - thinking_budget)
-    return min(tier_budget, headroom)
+    return min(effective_budget, headroom)
 
 

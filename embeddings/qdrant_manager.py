@@ -8,7 +8,6 @@ and high-throughput chunk upserts on top of Qdrant (self-hosted, Qdrant Cloud, o
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 import uuid
 from pathlib import Path
@@ -68,7 +67,8 @@ class QdrantManager:
                 url=qdrant_url,
                 api_key=api_key or None,
                 prefer_grpc=prefer_grpc,
-                timeout=float(getattr(settings, "retrieval_timeout_seconds", 5.0) or 5.0),
+                check_compatibility=False,
+                timeout=float(getattr(settings, "retrieval_timeout_seconds", 2.0) or 2.0),
             )
             # Health ping to verify remote availability
             client.get_collections()

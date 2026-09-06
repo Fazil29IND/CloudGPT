@@ -23,9 +23,8 @@ from config import get_settings
 from chunking.semantic_chunker import SemanticChunker
 from corpus.ingestion_state import IngestionStateManager
 from embeddings.embedding_engine import EmbeddingEngine
-from embeddings.pinecone_manager import (
-    PineconeManager,
-)
+from embeddings.qdrant_manager import QdrantManager
+from embeddings.pinecone_manager import PineconeManager
 from sources.generate_manifest import split_cell_services
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-8s  %(message)s")
@@ -507,14 +506,20 @@ async def ingest_services_rag(
     )
     embedding_engine.fit_bm25(all_texts)
 
-    # 6. Initialize Pinecone and Ingestion State Manager
+    # 6. Initialize Vector Database (Qdrant primary with Pinecone compatibility)
     state_mgr = IngestionStateManager()
-    pinecone_mgr = PineconeManager(settings)
-    await pinecone_mgr.initialize()
+    if hasattr(settings, "has_qdrant") and settings.has_qdrant:
+        vector_mgr = QdrantManager(settings)
+    elif getattr(settings, "pinecone_api_key", None):
+        vector_mgr = PineconeManager(settings)
+    else:
+        vector_mgr = QdrantManager(settings)
+
+    await vector_mgr.initialize()
 
     # Ingest Services namespace
-    services_ns = pinecone_mgr.active_namespace("services")
-    logger.info("Upserting %d points into Pinecone (namespace=%s)...", len(all_chunks), services_ns)
+    services_ns = vector_mgr.active_namespace("services")
+    logger.info("Upserting %d points into vector index (namespace=%s)...", len(all_chunks), services_ns)
 
     embed_batch = 64
     batch_size = 50
@@ -536,7 +541,7 @@ async def ingest_services_rag(
     for i in range(0, len(all_chunks), batch_size):
         batch = all_chunks[i : i + batch_size]
         try:
-            await pinecone_mgr.upsert_chunks(batch, namespace=services_ns)
+            await vector_mgr.upsert_chunks(batch, namespace=services_ns)
         except Exception as upsert_err:
             for c in batch:
                 state_mgr.record_failure(c["chunk_id"], c["chunk_id"], str(upsert_err), c["text"], services_ns)
@@ -544,7 +549,7 @@ async def ingest_services_rag(
     # Ingest Knowledge namespaces
     knowledge_total = 0
     for ns_base, ns_chunks in knowledge_by_namespace.items():
-        target_ns = pinecone_mgr.active_namespace(ns_base)
+        target_ns = vector_mgr.active_namespace(ns_base)
         logger.info("Embedding %d knowledge chunks for namespace=%s...", len(ns_chunks), target_ns)
         ns_texts = [chunk["text"] for chunk in ns_chunks]
         ns_dense = []
@@ -560,7 +565,7 @@ async def ingest_services_rag(
         for i in range(0, len(ns_chunks), batch_size):
             batch = ns_chunks[i : i + batch_size]
             try:
-                await pinecone_mgr.upsert_chunks(batch, namespace=target_ns)
+                await vector_mgr.upsert_chunks(batch, namespace=target_ns)
             except Exception as upsert_err:
                 for c in batch:
                     state_mgr.record_failure(c["chunk_id"], c["chunk_id"], str(upsert_err), c["text"], target_ns)
@@ -573,8 +578,8 @@ async def ingest_services_rag(
     )
     state_mgr.save()
 
-    stats = await pinecone_mgr.get_collection_stats()
-    logger.info("Pinecone index updated successfully! Stats: %s", stats)
+    stats = await vector_mgr.get_collection_stats()
+    logger.info("Vector index updated successfully! Stats: %s", stats)
 
     return {
         "status": "success",
@@ -583,9 +588,9 @@ async def ingest_services_rag(
         "strategy_sections_indexed": len(parsed_data["strategy_sections"]),
         "total_chunks_indexed": len(all_chunks),
         "knowledge_chunks_indexed": knowledge_total,
-        "namespaces": [services_ns] + [pinecone_mgr.active_namespace(ns) for ns in knowledge_by_namespace.keys()],
-        "pinecone_vector_count": stats.get("points_count", len(all_chunks) + knowledge_total),
-        "index_name": settings.pinecone_index_name,
+        "namespaces": [services_ns] + [vector_mgr.active_namespace(ns) for ns in knowledge_by_namespace.keys()],
+        "vector_count": stats.get("points_count", len(all_chunks) + knowledge_total),
+        "index_name": getattr(settings, "qdrant_collection_name", getattr(settings, "pinecone_index_name", "cloudgpt-services")),
     }
 
 

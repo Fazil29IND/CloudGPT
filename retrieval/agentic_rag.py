@@ -1015,10 +1015,15 @@ class AgenticRAGPipeline:
         }.get(tier, self.settings.context_tokens_pro) if getattr(self.settings, "enable_context_budget", True) else None
 
         if tier_context_budget:
+            has_attachments = bool(attachment_texts and len(attachment_texts) > 0)
+            is_deep = bool(chat_history and len(chat_history) >= 4)
             tier_context_budget = calculate_effective_prompt_budget(
                 tier_budget=tier_context_budget,
-                model_name=None,
+                model_name=getattr(self.settings, "gemini_model_generator", None),
                 max_output_tokens=getattr(self.settings, "chat_max_output_tokens", 4096),
+                tier=tier,
+                has_attachments=has_attachments,
+                is_deep_workload=is_deep,
             )
 
         messages = _build_pipeline_messages(

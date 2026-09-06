@@ -193,3 +193,84 @@ def test_multicloud_parity_context_injection_and_interleaving():
     assert "aws" in user_content or "AWS" in user_content
 
 
+def test_attention_u_curve_reordering():
+    from llm.context_builder import _reorder_for_attention_u_curve
+
+    chunks = [
+        {"id": 1, "score": 0.99},
+        {"id": 2, "score": 0.95},
+        {"id": 3, "score": 0.90},
+        {"id": 4, "score": 0.85},
+        {"id": 5, "score": 0.80},
+    ]
+    reordered = _reorder_for_attention_u_curve(chunks)
+    ids = [c["id"] for c in reordered]
+    # In U-curve: Rank 2 at primacy start, Rank 1 at recency end
+    assert ids[0] == 2
+    assert ids[-1] == 1
+
+
+def test_attention_u_curve_integration_in_build_context():
+    builder = ContextBuilder()
+    rag_results = [
+        {"provider": "aws", "service": f"s{i}", "url": f"https://aws.com/{i}", "content": f"Content item {i}"}
+        for i in range(1, 6)
+    ]
+    messages = builder.build_context(
+        query="Compare AWS services",
+        classification={"intent": "compare", "entities": ["AWS"]},
+        rag_results=rag_results,
+        max_context_tokens=4000,
+    )
+    user_content = messages[1]["content"]
+    assert "--- RAG SOURCES ---" in user_content
+    # Both Item 1 and Item 2 are present
+    assert "Content item 1" in user_content
+    assert "Content item 2" in user_content
+
+
+def test_dynamic_context_scaling_with_attachments():
+    builder = ContextBuilder()
+    attachments = [
+        {
+            "filename": "terraform.tf",
+            "content_type": "text/plain",
+            "content": "resource \"aws_s3_bucket\" \"b\" {\n  bucket = \"my-tf-test-bucket\"\n}\n" * 50,
+        }
+    ]
+    messages = builder.build_context(
+        query="Review my terraform config",
+        classification={"intent": "troubleshooting"},
+        attachment_texts=attachments,
+        tier="Pro",
+        model="gemini-2.5-flash",
+    )
+    user_content = messages[1]["content"]
+    assert "USER-UPLOADED ATTACHMENTS" in user_content
+    assert "terraform.tf" in user_content
+
+
+def test_kv_cache_prefix_invariance_with_policy_digest():
+    builder = ContextBuilder()
+    query = "How do I configure VPC peering?"
+    cls = {"intent": "architecture"}
+
+    # Base context without policy digest
+    msg_base = builder.build_context(query=query, classification=cls, tier="Pro")
+
+    # Context with dynamic runtime policy digest
+    msg_with_policy = builder.build_context(
+        query=query,
+        classification=cls,
+        tier="Pro",
+        policy_digest="REWRITE_PASS_ACTIVE: prefer high precision VPC docs.",
+    )
+
+    # System prompt MUST be 100% identical for KV cache hit
+    assert msg_base[0]["content"] == msg_with_policy[0]["content"]
+    # Policy digest is embedded cleanly in the user message
+    assert "DYNAMIC PIPELINE POLICY" in msg_with_policy[1]["content"]
+    assert "REWRITE_PASS_ACTIVE" in msg_with_policy[1]["content"]
+
+
+

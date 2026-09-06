@@ -299,342 +299,664 @@
        role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
     <div class="modal-card settings-modal-card">
 
-      <!-- Header -->
-      <div class="modal-header">
-        <div class="modal-header-left">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true" focusable="false">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-          </svg>
-          <h2 id="settings-modal-title" class="modal-title">Settings</h2>
-        </div>
-        <button id="settings-modal-close" class="modal-close-btn" type="button"
-                aria-label="Close settings">&times;</button>
-      </div>
-
-      <!-- Tab Bar -->
-      <div class="settings-tab-bar" role="tablist" aria-label="Settings sections">
-        <button class="settings-tab active" data-tab="account"    role="tab" aria-selected="true">Account</button>
-        <button class="settings-tab"        data-tab="memory"     role="tab" aria-selected="false">Memory</button>
-        <button class="settings-tab"        data-tab="preferences" role="tab" aria-selected="false">Preferences</button>
-        <button class="settings-tab"        data-tab="subscription" role="tab" aria-selected="false">Subscription</button>
-        <button class="settings-tab"        data-tab="about"      role="tab" aria-selected="false">About</button>
-      </div>
-
-      <!-- Tab Panels -->
-      <div class="modal-body settings-modal-body">
-
-        <!-- ── Account Tab ── -->
-        <div class="settings-panel active" data-panel="account" role="tabpanel">
-          <!-- Display Name -->
-          <div class="settings-group">
-            <label class="settings-label" for="settings-name-input">Display Name</label>
-            <div class="settings-field-row">
-              <input type="text" id="settings-name-input" class="settings-text-input"
-                     value="{{ user_name or '' }}" maxlength="80" autocomplete="off"
-                     placeholder="Your name" aria-label="Display name" />
-              <button type="button" id="settings-save-name-btn" class="settings-action-btn">
-                Save
-              </button>
-            </div>
-            <span id="settings-name-feedback" class="settings-feedback" aria-live="polite"></span>
+      <!-- Left Navigation Column -->
+      <aside class="settings-sidebar">
+        <div class="settings-sidebar-header">
+          <div class="settings-sidebar-brand">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true" focusable="false">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <h2 id="settings-modal-title" class="modal-title">Settings</h2>
           </div>
-
-          <!-- Email -->
-          <div class="settings-group">
-            <label class="settings-label">Email Address</label>
-            <div class="settings-readonly-value">
-              <span>{{ user_email or '' }}</span>
-            </div>
-          </div>
-
-          <!-- Change Password (hidden for OAuth-only accounts) -->
-          {% if has_password %}
-          <div class="settings-group" id="settings-password-group">
-            <label class="settings-label">Password</label>
-            <button type="button" id="settings-change-password-toggle"
-                    class="settings-action-btn settings-action-btn--outline">
-              Change Password
-            </button>
-            <div id="settings-password-fields" class="settings-password-fields hidden">
-              <input type="password" id="settings-current-password" class="settings-text-input"
-                     placeholder="Current password" autocomplete="current-password" />
-              <input type="password" id="settings-new-password" class="settings-text-input"
-                     placeholder="New password (8+ chars, upper, lower, number, symbol)" autocomplete="new-password" />
-              <input type="password" id="settings-confirm-password" class="settings-text-input"
-                     placeholder="Confirm new password" autocomplete="new-password" />
-              <div class="settings-field-row">
-                <button type="button" id="settings-save-password-btn" class="settings-action-btn">
-                  Update Password
-                </button>
-                <button type="button" id="settings-cancel-password-btn"
-                        class="settings-action-btn settings-action-btn--ghost">
-                  Cancel
-                </button>
-              </div>
-              <span id="settings-password-feedback" class="settings-feedback" aria-live="polite"></span>
-            </div>
-          </div>
-          {% endif %}
-
-          <!-- Account Created / Member info -->
-          <div class="settings-group settings-group--meta">
-            <span class="settings-meta-label">Account Tier</span>
-            <span class="settings-meta-value">{{ user_tier or 'Lite' }}</span>
-          </div>
-
-          <!-- Sign Out — bottom of account tab -->
-          <div class="settings-group settings-signout-group">
-            <form action="/logout" method="post" class="settings-logout-form">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
-              <button type="submit" class="settings-action-btn settings-action-btn--danger">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                     width="14" height="14" aria-hidden="true">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                  <polyline points="16 17 21 12 16 7"></polyline>
-                  <line x1="21" y1="12" x2="9" y2="12"></line>
-                </svg>
-                Sign Out
-              </button>
-            </form>
+          <div class="settings-search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="settings-search-input" class="settings-search-input" placeholder="Search settings..." aria-label="Search settings" />
           </div>
         </div>
 
-        <!-- ── Memory Tab ── -->
-        <div class="settings-panel hidden" data-panel="memory" role="tabpanel">
-          {% if has_memory %}
-          <div class="settings-group">
-            <p class="settings-description">
-              Durable preferences, cloud environments, and constraints automatically
-              learned from your conversations to personalize future answers.
-              Bounded to &le;300 tokens and applied across all your sessions.
-            </p>
-          </div>
-          <div class="settings-group">
-            <div class="settings-field-row settings-field-row--space-between">
-              <span class="settings-label">Remembered Preferences</span>
-              <button type="button" id="settings-clear-all-memory-btn"
-                      class="settings-action-btn settings-action-btn--danger-outline">
-                Clear All
-              </button>
-            </div>
-            <!-- Inline confirm (hidden until Clear All clicked) -->
-            <div id="settings-clear-memory-confirm" class="settings-confirm-inline hidden">
-              <span>Delete all memories? This cannot be undone.</span>
-              <button type="button" id="settings-clear-memory-yes"
-                      class="settings-action-btn settings-action-btn--danger">Yes, Delete</button>
-              <button type="button" id="settings-clear-memory-no"
-                      class="settings-action-btn settings-action-btn--ghost">Cancel</button>
-            </div>
-          </div>
-          <div id="settings-memory-loading" class="memory-status-text">Loading…</div>
-          <div id="settings-memory-empty" class="memory-status-text hidden">
-            No preferences remembered yet. As you chat, CloudGPT will remember
-            your primary cloud, preferred regions, and IaC tooling.
-          </div>
-          <div id="settings-memory-items" class="memory-items-list"></div>
-          {% else %}
-          <div class="settings-group">
-            <div class="settings-tier-lock">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
-                   stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-              <div>
-                <strong>Memory is a Pro+ feature</strong>
-                <p>Upgrade to Pro or Max to unlock cross-session preferences
-                   and personalized responses.</p>
-                <a href="/billing" class="settings-upgrade-link">Upgrade Plan →</a>
-              </div>
-            </div>
-          </div>
-          {% endif %}
-        </div>
+        <nav class="settings-tab-bar" role="tablist" aria-label="Settings sections">
+          <div class="settings-nav-heading">User &amp; Identity</div>
+          <button class="settings-tab active" data-tab="account" role="tab" aria-selected="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            <span>Account</span>
+          </button>
+          <button class="settings-tab" data-tab="subscription" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+            <span>Subscription</span>
+            <span class="settings-sidebar-badge">{{ user_tier or 'Lite' }}</span>
+          </button>
 
-        <!-- ── Preferences Tab ── -->
-        <div class="settings-panel hidden" data-panel="preferences" role="tabpanel">
+          <div class="settings-nav-heading">Intelligence</div>
+          <button class="settings-tab" data-tab="model" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+            <span>Model &amp; Reasoning</span>
+          </button>
+          <button class="settings-tab" data-tab="cloud" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+            <span>Cloud &amp; Tooling</span>
+          </button>
 
-          <!-- Response Language -->
-          <div class="settings-group">
-            <label class="settings-label" for="pref-language">Response Language</label>
-            <select id="pref-language" class="settings-select"
-                    data-pref-key="response_language"
-                    aria-label="Default response language">
-              <option value="auto">Auto-detect</option>
-              <option value="en">English</option>
-              <option value="ar">Arabic</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="hi">Hindi</option>
-              <option value="ja">Japanese</option>
-              <option value="pt">Portuguese</option>
-              <option value="es">Spanish</option>
-              <option value="zh">Chinese (Simplified)</option>
-            </select>
-            <span class="settings-hint">Applies to the next conversation you start.</span>
-          </div>
+          <div class="settings-nav-heading">Workspace</div>
+          <button class="settings-tab" data-tab="preferences" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Preferences &amp; UI</span>
+          </button>
+          <button class="settings-tab" data-tab="memory" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+            <span>Memory &amp; Context</span>
+          </button>
 
-          <!-- Default Thinking Level -->
-          <div class="settings-group">
-            <label class="settings-label" for="pref-thinking">Default Thinking Level</label>
-            <select id="pref-thinking" class="settings-select"
-                    data-pref-key="default_thinking"
-                    aria-label="Default thinking level">
-              <option value="auto">Auto (recommended)</option>
-              <option value="Low">Low — Fastest</option>
-              <option value="Medium">Medium — Balanced</option>
-              <option value="High">High — Thorough</option>
-              {% if allowed_thinking_levels and 'Max' in allowed_thinking_levels %}
-              <option value="Max">Max — Deepest Reasoning</option>
-              {% endif %}
-            </select>
-            <span class="settings-hint">Your tier's model access still applies.</span>
-          </div>
+          <div class="settings-nav-heading">System</div>
+          <button class="settings-tab" data-tab="security" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            <span>Security &amp; Data</span>
+          </button>
+          <button class="settings-tab" data-tab="about" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>About &amp; Shortcuts</span>
+          </button>
+        </nav>
 
-          <!-- Toggle settings -->
-          <div class="settings-group">
-            <label class="settings-label">Interface</label>
-
-            <div class="settings-toggle-row" data-pref-key="show_thinking">
-              <div>
-                <span class="settings-toggle-title">Show Thinking Process</span>
-                <span class="settings-toggle-desc">Expand the reasoning panel by default</span>
-              </div>
-              <button type="button" class="settings-toggle" role="switch"
-                      aria-label="Toggle show thinking process" aria-checked="false">
-                <span class="settings-toggle-thumb"></span>
-              </button>
-            </div>
-
-            <div class="settings-toggle-row" data-pref-key="show_token_usage">
-              <div>
-                <span class="settings-toggle-title">Show Token Usage</span>
-                <span class="settings-toggle-desc">Daily & monthly usage in the sidebar</span>
-              </div>
-              <button type="button" class="settings-toggle" role="switch"
-                      aria-label="Toggle show token usage" aria-checked="true">
-                <span class="settings-toggle-thumb"></span>
-              </button>
-            </div>
-
-            <div class="settings-toggle-row" data-pref-key="show_pipeline_stages">
-              <div>
-                <span class="settings-toggle-title">Show Pipeline Stages</span>
-                <span class="settings-toggle-desc">Progress indicator while CloudGPT is thinking</span>
-              </div>
-              <button type="button" class="settings-toggle" role="switch"
-                      aria-label="Toggle show pipeline stages" aria-checked="true">
-                <span class="settings-toggle-thumb"></span>
-              </button>
-            </div>
-
-            <div class="settings-toggle-row" data-pref-key="compact_messages">
-              <div>
-                <span class="settings-toggle-title">Compact Message View</span>
-                <span class="settings-toggle-desc">Reduce spacing between messages</span>
-              </div>
-              <button type="button" class="settings-toggle" role="switch"
-                      aria-label="Toggle compact messages" aria-checked="false">
-                <span class="settings-toggle-thumb"></span>
-              </button>
-            </div>
-
-            <!-- Web Search toggle: Pro+ only -->
-            <div class="settings-toggle-row {% if user_tier and user_tier|lower == 'lite' %}settings-toggle-row--locked{% endif %}"
-                 data-pref-key="always_web_search">
-              <div>
-                <span class="settings-toggle-title">Always Use Web Search
-                  {% if user_tier and user_tier|lower == 'lite' %}
-                  <span class="settings-tier-badge">Pro+</span>
-                  {% endif %}
-                </span>
-                <span class="settings-toggle-desc">Force live internet search on every query</span>
-              </div>
-              <button type="button" class="settings-toggle"
-                      role="switch" aria-label="Toggle always web search"
-                      aria-checked="false"
-                      {% if user_tier and user_tier|lower == 'lite' %}disabled aria-disabled="true"{% endif %}>
-                <span class="settings-toggle-thumb"></span>
-              </button>
+        <div class="settings-sidebar-footer">
+          <div class="settings-profile-chip">
+            <div class="settings-profile-avatar">{{ user_name[0] | upper if user_name else (user_email[0] | upper if user_email else 'U') }}</div>
+            <div class="settings-profile-meta">
+              <span class="settings-profile-name">{{ user_name or (user_email.split('@')[0] if user_email else 'User') }}</span>
+              <span class="settings-profile-tier">{{ effective_tier or user_tier or 'Lite' }} Plan</span>
             </div>
           </div>
         </div>
+      </aside>
 
-        <!-- ── Subscription Tab ── -->
-        <div class="settings-panel hidden" data-panel="subscription" role="tabpanel">
-          <div class="settings-group">
-            <div class="settings-sub-header">
-              <span class="settings-label">Current Plan</span>
-              <span class="tier-badge settings-plan-badge">{{ user_tier or 'Lite' }}</span>
-            </div>
+      <!-- Right Content Pane -->
+      <main class="settings-main-canvas">
+        <header class="settings-main-header">
+          <div class="settings-header-copy">
+            <h3 id="settings-section-title" class="settings-section-title">Account</h3>
+            <p id="settings-section-subtitle" class="settings-section-subtitle">Manage your profile, credentials, and authentication.</p>
           </div>
+          <button id="settings-modal-close" class="modal-close-btn" type="button" aria-label="Close settings">&times;</button>
+        </header>
 
-          <div class="settings-group">
-            <label class="settings-label">Usage This Billing Period</label>
-            <div class="settings-usage-rows" id="settings-usage-rows">
-              <div class="settings-usage-loading">Loading usage data…</div>
+        <!-- Tab Panels -->
+        <div class="modal-body settings-modal-body">
+
+          <!-- ── Account Tab ── -->
+          <div class="settings-panel active" data-panel="account" role="tabpanel">
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Profile Information</span>
+                <span class="settings-card-desc">Your public details inside CloudGPT workspaces</span>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label" for="settings-name-input">Display Name</label>
+                <div class="settings-field-row">
+                  <input type="text" id="settings-name-input" class="settings-text-input"
+                         value="{{ user_name or '' }}" maxlength="80" autocomplete="off"
+                         placeholder="Your name" aria-label="Display name" />
+                  <button type="button" id="settings-save-name-btn" class="settings-action-btn settings-action-btn--primary">
+                    Save
+                  </button>
+                </div>
+                <span id="settings-name-feedback" class="settings-feedback" aria-live="polite"></span>
+              </div>
+
+              <div class="settings-group">
+                <label class="settings-label">Email Address</label>
+                <div class="settings-readonly-value">
+                  <span>{{ user_email or '' }}</span>
+                  <span class="settings-verified-badge">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    Verified
+                  </span>
+                </div>
+              </div>
+
+              <div class="settings-group settings-group--meta">
+                <div>
+                  <span class="settings-meta-label">Current Access Tier</span>
+                  <span class="settings-meta-hint">Governs model access, thinking depth, and daily token budgets</span>
+                </div>
+                <span class="settings-badge-pill">{{ user_tier or 'Lite' }}</span>
+              </div>
             </div>
-          </div>
 
-          <div class="settings-group settings-sub-actions">
-            {% if user_tier and user_tier|lower not in ['max', 'developer'] and not is_unlimited %}
-            <a href="/billing" class="settings-action-btn settings-action-btn--primary"
-               id="settings-upgrade-btn">
-              Upgrade Plan
-            </a>
+            <!-- Password Change Section (Password users only) -->
+            {% if has_password %}
+            <div class="settings-card" id="settings-password-group">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Account Password</span>
+                <span class="settings-card-desc">Update your login password securely</span>
+              </div>
+              <button type="button" id="settings-change-password-toggle"
+                      class="settings-action-btn settings-action-btn--outline">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                Change Password
+              </button>
+              <div id="settings-password-fields" class="settings-password-fields hidden">
+                <input type="password" id="settings-current-password" class="settings-text-input"
+                       placeholder="Current password" autocomplete="current-password" />
+                <input type="password" id="settings-new-password" class="settings-text-input"
+                       placeholder="New password (8+ chars, upper, lower, number, symbol)" autocomplete="new-password" />
+                <input type="password" id="settings-confirm-password" class="settings-text-input"
+                       placeholder="Confirm new password" autocomplete="new-password" />
+                <div class="settings-field-row">
+                  <button type="button" id="settings-save-password-btn" class="settings-action-btn settings-action-btn--primary">
+                    Update Password
+                  </button>
+                  <button type="button" id="settings-cancel-password-btn"
+                          class="settings-action-btn settings-action-btn--ghost">
+                    Cancel
+                  </button>
+                </div>
+                <span id="settings-password-feedback" class="settings-feedback" aria-live="polite"></span>
+              </div>
+            </div>
             {% endif %}
-            <button type="button" id="settings-billing-portal-btn"
-                    class="settings-action-btn settings-action-btn--outline hidden">
-              Manage Billing
-            </button>
-          </div>
 
-          <div class="settings-group settings-plan-features">
-            <label class="settings-label">What's Included</label>
-            <ul class="settings-features-list" id="settings-features-list">
-              <!-- Populated by JS based on tier -->
-            </ul>
-          </div>
-        </div>
-
-        <!-- ── About & Shortcuts Tab ── -->
-        <div class="settings-panel hidden" data-panel="about" role="tabpanel">
-          <div class="settings-group">
-            <label class="settings-label">Keyboard Shortcuts</label>
-            <table class="settings-shortcuts-table" aria-label="Keyboard shortcuts">
-              <tbody>
-                <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Send message</td></tr>
-                <tr><td><kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Toggle voice input</td></tr>
-                <tr><td><kbd>Escape</kbd></td><td>Cancel stream / Close panel</td></tr>
-                <tr><td><kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>New conversation</td></tr>
-                <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open settings</td></tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="settings-group">
-            <label class="settings-label">Application</label>
-            <div class="settings-about-row">
-              <span class="settings-meta-label">CloudGPT</span>
-              <span class="settings-meta-value">Enterprise Multi-Cloud Research Assistant</span>
-            </div>
-            <div class="settings-about-row">
-              <span class="settings-meta-label">Coverage</span>
-              <span class="settings-meta-value">848 AWS / GCP / Azure services · 27 categories</span>
+            <!-- Sign Out -->
+            <div class="settings-card settings-card--danger">
+              <div class="settings-card-header">
+                <span class="settings-card-title text-danger">Session &amp; Security</span>
+                <span class="settings-card-desc">End your active session on this device</span>
+              </div>
+              <form action="/logout" method="post" class="settings-logout-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+                <button type="submit" class="settings-action-btn settings-action-btn--danger">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       width="14" height="14" aria-hidden="true">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                  Sign Out of CloudGPT
+                </button>
+              </form>
             </div>
           </div>
 
-          <div class="settings-group">
-            <label class="settings-label">Legal & Support</label>
-            <div class="settings-links-row">
-              <a href="/privacy" class="settings-text-link" target="_blank">Privacy Policy</a>
-              <a href="/terms" class="settings-text-link" target="_blank">Terms of Service</a>
+          <!-- ── Subscription Tab ── -->
+          <div class="settings-panel hidden" data-panel="subscription" role="tabpanel">
+            <div class="settings-card settings-plan-hero">
+              <div class="settings-plan-hero-left">
+                <div class="settings-sub-header">
+                  <span class="settings-plan-hero-label">Current Tier</span>
+                  <span class="tier-badge settings-plan-badge">{{ user_tier or 'Lite' }}</span>
+                </div>
+                <h4 class="settings-plan-headline">CloudGPT {{ user_tier or 'Lite' }}</h4>
+                <p class="settings-plan-subline">
+                  {% if user_tier and user_tier|lower in ['pro', 'max', 'developer'] %}
+                  Active subscription with high-capacity neural reasoning and priority retrieval.
+                  {% else %}
+                  Essential research tier with 848 cloud services indexed. Upgrade for Apex reasoning and user memory.
+                  {% endif %}
+                </p>
+              </div>
+              <div class="settings-sub-actions">
+                {% if user_tier and user_tier|lower not in ['max', 'developer'] and not is_unlimited %}
+                <a href="/billing" class="settings-action-btn settings-action-btn--primary" id="settings-upgrade-btn">
+                  Upgrade Plan →
+                </a>
+                {% endif %}
+                <button type="button" id="settings-billing-portal-btn"
+                        class="settings-action-btn settings-action-btn--outline hidden">
+                  Manage Billing (Stripe)
+                </button>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Token Quotas &amp; Rolling Limits</span>
+                <span class="settings-card-desc">Live usage against your plan's token allowances</span>
+              </div>
+              <div class="settings-usage-rows" id="settings-usage-rows">
+                <div class="settings-usage-loading">Loading usage metrics…</div>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Tier Entitlements</span>
+                <span class="settings-card-desc">Capabilities included in your current plan</span>
+              </div>
+              <ul class="settings-features-list" id="settings-features-list">
+                <!-- Populated dynamically by JS -->
+              </ul>
             </div>
           </div>
-        </div>
 
-      </div><!-- /.modal-body -->
+          <!-- ── Model & Reasoning Tab ── -->
+          <div class="settings-panel hidden" data-panel="model" role="tabpanel">
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Default Reasoning Engine</span>
+                <span class="settings-card-desc">Configure the AI foundation model and cognitive depth</span>
+              </div>
+
+              <div class="settings-group">
+                <label class="settings-label" for="pref-default-model">Default Model</label>
+                <select id="pref-default-model" class="settings-select" data-pref-key="default_model" aria-label="Default AI Model">
+                  <option value="auto">Auto-Select (Recommended based on query complexity)</option>
+                  {% if allowed_models and 'Apex' in allowed_models %}
+                  <option value="Apex">Apex — Deepest Cloud Reasoning &amp; Architecture Synthesis</option>
+                  {% endif %}
+                  {% if allowed_models and 'Core' in allowed_models %}
+                  <option value="Core">Core — Balanced High-Performance Cloud Engineering</option>
+                  {% endif %}
+                  <option value="Lite">Lite — Fast Answers &amp; Quick Fact Retrieval</option>
+                </select>
+                <span class="settings-hint">Models available depend on your active plan tier.</span>
+              </div>
+
+              <div class="settings-group">
+                <label class="settings-label" for="pref-thinking">Default Thinking Depth</label>
+                <select id="pref-thinking" class="settings-select" data-pref-key="default_thinking" aria-label="Default thinking level">
+                  <option value="auto">Auto (Dynamically adjusted per prompt)</option>
+                  <option value="Low">Low — Rapid query resolution</option>
+                  <option value="Medium">Medium — Standard architecture validation</option>
+                  <option value="High">High — Deep multi-cloud tradeoff exploration</option>
+                  {% if allowed_thinking_levels and 'Max' in allowed_thinking_levels %}
+                  <option value="Max">Max — Exhaustive system decomposition</option>
+                  {% endif %}
+                </select>
+                <span class="settings-hint">Tier constraints apply automatically.</span>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Reasoning Visibility</span>
+                <span class="settings-card-desc">Control how AI thoughts and pipeline stages appear</span>
+              </div>
+
+              <div class="settings-toggle-row" data-pref-key="show_thinking">
+                <div>
+                  <span class="settings-toggle-title">Expand Thinking by Default</span>
+                  <span class="settings-toggle-desc">Automatically display the internal reasoning steps</span>
+                </div>
+                <button type="button" class="settings-toggle" role="switch" aria-label="Toggle show thinking" aria-checked="false">
+                  <span class="settings-toggle-thumb"></span>
+                </button>
+              </div>
+
+              <div class="settings-toggle-row" data-pref-key="show_pipeline_stages">
+                <div>
+                  <span class="settings-toggle-title">Show Real-Time Pipeline Stages</span>
+                  <span class="settings-toggle-desc">Live progress across Query Router, RAG, and Tools</span>
+                </div>
+                <button type="button" class="settings-toggle" role="switch" aria-label="Toggle show pipeline stages" aria-checked="true">
+                  <span class="settings-toggle-thumb"></span>
+                </button>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Custom Cloud Persona &amp; Instructions</span>
+                <span class="settings-card-desc">Persistent behavioral guidelines injected into all system prompts</span>
+              </div>
+              <div class="settings-group">
+                <textarea id="pref-custom-instructions" class="settings-textarea" rows="3"
+                          data-pref-key="custom_instructions"
+                          placeholder="e.g. Always generate production-ready Terraform HCL v1.5+, include strict IAM least-privilege policies, and compare AWS vs GCP cost implications."></textarea>
+                <div class="settings-field-row settings-field-row--space-between">
+                  <span class="settings-hint">Max 500 characters. Automatically persisted.</span>
+                  <button type="button" id="settings-save-instructions-btn" class="settings-action-btn settings-action-btn--outline">
+                    Save Instructions
+                  </button>
+                </div>
+                <span id="settings-instructions-feedback" class="settings-feedback"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Cloud & Tooling Tab ── -->
+          <div class="settings-panel hidden" data-panel="cloud" role="tabpanel">
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Cloud Infrastructure Preferences</span>
+                <span class="settings-card-desc">Set your primary cloud environment and deployment tooling</span>
+              </div>
+
+              <div class="settings-group">
+                <label class="settings-label" for="pref-primary-cloud">Primary Cloud Ecosystem</label>
+                <select id="pref-primary-cloud" class="settings-select" data-pref-key="primary_cloud" aria-label="Primary Cloud Provider">
+                  <option value="multi">Multi-Cloud (AWS, Google Cloud, Azure)</option>
+                  <option value="aws">Amazon Web Services (AWS Focus)</option>
+                  <option value="gcp">Google Cloud Platform (GCP Focus)</option>
+                  <option value="azure">Microsoft Azure Focus</option>
+                </select>
+                <span class="settings-hint">Prioritizes retrieval context and code snippets for this cloud.</span>
+              </div>
+
+              <div class="settings-group">
+                <label class="settings-label" for="pref-preferred-iac">Preferred Infrastructure as Code (IaC)</label>
+                <select id="pref-preferred-iac" class="settings-select" data-pref-key="preferred_iac" aria-label="Preferred IaC Tooling">
+                  <option value="terraform">HashiCorp Terraform / OpenTofu (HCL)</option>
+                  <option value="cdk">AWS Cloud Development Kit (TypeScript/Python CDK)</option>
+                  <option value="cloudformation">AWS CloudFormation (YAML)</option>
+                  <option value="pulumi">Pulumi (TypeScript/Go/Python)</option>
+                  <option value="bicep">Azure Bicep / ARM Templates</option>
+                  <option value="k8s">Kubernetes Manifests &amp; Helm Charts</option>
+                </select>
+              </div>
+
+              <div class="settings-group">
+                <label class="settings-label" for="pref-preferred-region">Default Region Preference</label>
+                <select id="pref-preferred-region" class="settings-select" data-pref-key="preferred_region" aria-label="Preferred Cloud Region">
+                  <option value="auto">Auto / Multi-Region Architecture</option>
+                  <option value="us-east-1">US East (N. Virginia / us-east-1)</option>
+                  <option value="us-west-2">US West (Oregon / us-west-2)</option>
+                  <option value="eu-west-1">Europe (Ireland / eu-west-1)</option>
+                  <option value="ap-south-1">Asia Pacific (Mumbai / ap-south-1)</option>
+                  <option value="us-central1">GCP us-central1 (Iowa)</option>
+                  <option value="eastus">Azure East US</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Retrieval &amp; Search Tools</span>
+                <span class="settings-card-desc">Configure vector DB search and live internet grounding</span>
+              </div>
+
+              <div class="settings-group">
+                <label class="settings-label" for="pref-rag-search-mode">RAG Vector Retrieval Mode</label>
+                <select id="pref-rag-search-mode" class="settings-select" data-pref-key="rag_search_mode" aria-label="RAG Mode">
+                  <option value="hybrid">Hybrid Search (Qdrant Dense Vector + BM25 Lexical) [Recommended]</option>
+                  <option value="dense">High-Precision Semantic (Qdrant HNSW Cosine)</option>
+                  <option value="rerank">Comprehensive Re-ranking (Full Cross-Encoder)</option>
+                </select>
+                <span class="settings-hint">Searches 848 services across AWS, GCP, and Azure.</span>
+              </div>
+
+              <div class="settings-toggle-row {% if user_tier and user_tier|lower == 'lite' %}settings-toggle-row--locked{% endif %}"
+                   data-pref-key="always_web_search">
+                <div>
+                  <span class="settings-toggle-title">Always Force Web Search
+                    {% if user_tier and user_tier|lower == 'lite' %}
+                    <span class="settings-tier-badge">Pro+</span>
+                    {% endif %}
+                  </span>
+                  <span class="settings-toggle-desc">Trigger live internet search on every query instead of routing dynamically</span>
+                </div>
+                <button type="button" class="settings-toggle" role="switch" aria-label="Toggle always web search"
+                        aria-checked="false" {% if user_tier and user_tier|lower == 'lite' %}disabled aria-disabled="true"{% endif %}>
+                  <span class="settings-toggle-thumb"></span>
+                </button>
+              </div>
+
+              <div class="settings-toggle-row" data-pref-key="live_cloud_tools">
+                <div>
+                  <span class="settings-toggle-title">Live Cloud Pricing Calculators</span>
+                  <span class="settings-toggle-desc">Allow the assistant to fetch real-time spot and on-demand pricing APIs</span>
+                </div>
+                <button type="button" class="settings-toggle" role="switch" aria-label="Toggle live cloud pricing" aria-checked="true">
+                  <span class="settings-toggle-thumb"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Preferences & UI Tab ── -->
+          <div class="settings-panel hidden" data-panel="preferences" role="tabpanel">
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Localization &amp; Language</span>
+                <span class="settings-card-desc">Customize language and translation formats</span>
+              </div>
+
+              <div class="settings-group">
+                <label class="settings-label" for="pref-language">Response Language</label>
+                <select id="pref-language" class="settings-select" data-pref-key="response_language" aria-label="Default response language">
+                  <option value="auto">Auto-detect (Matches your prompt language)</option>
+                  <option value="en">English (US/UK)</option>
+                  <option value="ar">Arabic (العربية)</option>
+                  <option value="fr">French (Français)</option>
+                  <option value="de">German (Deutsch)</option>
+                  <option value="hi">Hindi (हिन्दी)</option>
+                  <option value="ja">Japanese (日本語)</option>
+                  <option value="pt">Portuguese (Português)</option>
+                  <option value="es">Spanish (Español)</option>
+                  <option value="zh">Chinese (Simplified / 简体中文)</option>
+                </select>
+                <span class="settings-hint">Applies to the next prompt you submit.</span>
+              </div>
+
+              <div class="settings-group">
+                <label class="settings-label" for="pref-theme-mode">Interface Theme</label>
+                <select id="pref-theme-mode" class="settings-select" data-pref-key="theme_mode" aria-label="Interface Theme">
+                  <option value="obsidian">Obsidian Dark (Standard Enterprise)</option>
+                  <option value="contrast">High-Contrast Midnight</option>
+                  <option value="pitch_black">OLED Pure Pitch Black</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Interface Layout &amp; Streaming</span>
+                <span class="settings-card-desc">Visual density and message rendering options</span>
+              </div>
+
+              <div class="settings-toggle-row" data-pref-key="compact_messages">
+                <div>
+                  <span class="settings-toggle-title">Compact Message Spacing</span>
+                  <span class="settings-toggle-desc">Tighten padding and margins for dense information review</span>
+                </div>
+                <button type="button" class="settings-toggle" role="switch" aria-label="Toggle compact messages" aria-checked="false">
+                  <span class="settings-toggle-thumb"></span>
+                </button>
+              </div>
+
+              <div class="settings-toggle-row" data-pref-key="show_token_usage">
+                <div>
+                  <span class="settings-toggle-title">Sidebar Token Counter</span>
+                  <span class="settings-toggle-desc">Show real-time daily quota usage in the left navigation sidebar</span>
+                </div>
+                <button type="button" class="settings-toggle" role="switch" aria-label="Toggle show token usage" aria-checked="true">
+                  <span class="settings-toggle-thumb"></span>
+                </button>
+              </div>
+
+              <div class="settings-toggle-row" data-pref-key="code_line_numbers">
+                <div>
+                  <span class="settings-toggle-title">Code Block Line Numbers</span>
+                  <span class="settings-toggle-desc">Display line numbers inside syntax-highlighted code snippets</span>
+                </div>
+                <button type="button" class="settings-toggle" role="switch" aria-label="Toggle code line numbers" aria-checked="true">
+                  <span class="settings-toggle-thumb"></span>
+                </button>
+              </div>
+
+              <div class="settings-toggle-row" data-pref-key="stream_speed">
+                <div>
+                  <span class="settings-toggle-title">Smooth Token Streaming</span>
+                  <span class="settings-toggle-desc">Fluid micro-animated token output for reading comfort</span>
+                </div>
+                <button type="button" class="settings-toggle" role="switch" aria-label="Toggle smooth token streaming" aria-checked="true">
+                  <span class="settings-toggle-thumb"></span>
+                </button>
+              </div>
+
+              <div class="settings-toggle-row" data-pref-key="audio_autoplay">
+                <div>
+                  <span class="settings-toggle-title">Audio Briefing Auto-play</span>
+                  <span class="settings-toggle-desc">Automatically play generated audio synthesis summaries</span>
+                </div>
+                <button type="button" class="settings-toggle" role="switch" aria-label="Toggle audio autoplay" aria-checked="false">
+                  <span class="settings-toggle-thumb"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Memory Tab ── -->
+          <div class="settings-panel hidden" data-panel="memory" role="tabpanel">
+            {% if has_memory %}
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Cross-Session Durable Memory</span>
+                <span class="settings-card-desc">Preferences and infrastructure constraints learned from past conversations</span>
+              </div>
+              <p class="settings-description">
+                CloudGPT automatically stores your key architectural choices (preferred cloud, IaC tools, VPC ranges, and compliance mandates) across sessions up to a strict 300-token budget.
+              </p>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-field-row settings-field-row--space-between">
+                <div class="settings-card-header">
+                  <span class="settings-card-title">Active Memories</span>
+                  <span class="settings-card-desc">Individual learned facts applied to your prompts</span>
+                </div>
+                <button type="button" id="settings-clear-all-memory-btn"
+                        class="settings-action-btn settings-action-btn--danger-outline">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  Clear All Memories
+                </button>
+              </div>
+
+              <!-- Inline confirm -->
+              <div id="settings-clear-memory-confirm" class="settings-confirm-inline hidden">
+                <span>Delete all remembered preferences? This action cannot be reversed.</span>
+                <div class="settings-field-row">
+                  <button type="button" id="settings-clear-memory-yes" class="settings-action-btn settings-action-btn--danger">
+                    Yes, Delete All
+                  </button>
+                  <button type="button" id="settings-clear-memory-no" class="settings-action-btn settings-action-btn--ghost">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+
+              <div id="settings-memory-loading" class="memory-status-text">Loading preferences…</div>
+              <div id="settings-memory-empty" class="memory-status-text hidden">
+                No preferences remembered yet. As you ask questions about your cloud architecture, CloudGPT will remember your stack choices automatically.
+              </div>
+              <div id="settings-memory-items" class="memory-items-list"></div>
+            </div>
+            {% else %}
+            <div class="settings-card">
+              <div class="settings-tier-lock">
+                <div class="settings-tier-lock-icon">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                </div>
+                <div>
+                  <strong>User Memory is a Pro+ Feature</strong>
+                  <p>Upgrade to Pro or Max to enable cross-session memory that retains your cloud architecture preferences and tooling decisions automatically.</p>
+                  <a href="/billing" class="settings-upgrade-link">Upgrade to Pro &rarr;</a>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- ── Security & Data Tab ── -->
+          <div class="settings-panel hidden" data-panel="security" role="tabpanel">
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Authentication &amp; Credentials</span>
+                <span class="settings-card-desc">Manage account access security</span>
+              </div>
+              <div class="settings-about-row">
+                <span class="settings-meta-label">Primary Identity</span>
+                <span class="settings-meta-value">{{ user_email }}</span>
+              </div>
+              <div class="settings-about-row">
+                <span class="settings-meta-label">Login Method</span>
+                <span class="settings-meta-value">{{ 'Password + Session Auth' if has_password else 'Google OAuth SSO' }}</span>
+              </div>
+              <div class="settings-about-row">
+                <span class="settings-meta-label">CSRF Protection</span>
+                <span class="settings-meta-value text-success">Active (HMAC Double-Submit Cookie)</span>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Data Privacy &amp; Portability</span>
+                <span class="settings-card-desc">Download or erase your personal CloudGPT research data</span>
+              </div>
+              <div class="settings-field-row settings-field-row--space-between">
+                <div>
+                  <span class="settings-toggle-title">Export Research Conversations</span>
+                  <span class="settings-toggle-desc">Download full conversation history in JSON format</span>
+                </div>
+                <a href="/api/user/export" class="settings-action-btn settings-action-btn--outline" download>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  Export JSON
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── About & Shortcuts Tab ── -->
+          <div class="settings-panel hidden" data-panel="about" role="tabpanel">
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Keyboard Shortcuts</span>
+                <span class="settings-card-desc">Accelerate your workflow with quick keybindings</span>
+              </div>
+              <table class="settings-shortcuts-table" aria-label="Keyboard shortcuts">
+                <tbody>
+                  <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Send prompt / submit message</td></tr>
+                  <tr><td><kbd>Ctrl</kbd> + <kbd>,</kbd></td><td>Open Settings modal</td></tr>
+                  <tr><td><kbd>Ctrl</kbd> + <kbd>/</kbd></td><td>Start new conversation session</td></tr>
+                  <tr><td><kbd>Ctrl</kbd> + <kbd>M</kbd></td><td>Toggle voice input audio dictation</td></tr>
+                  <tr><td><kbd>Esc</kbd></td><td>Cancel streaming / close modals</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Architecture Diagnostics</span>
+                <span class="settings-card-desc">System engine status and connected infrastructure</span>
+              </div>
+              <div class="settings-about-row">
+                <span class="settings-meta-label">Version</span>
+                <span class="settings-meta-value">CloudGPT Enterprise 2026.1 (Production)</span>
+              </div>
+              <div class="settings-about-row">
+                <span class="settings-meta-label">Vector Database</span>
+                <span class="settings-meta-value text-success">Qdrant Vector Engine (HNSW Cosine)</span>
+              </div>
+              <div class="settings-about-row">
+                <span class="settings-meta-label">RAG Knowledge Corpus</span>
+                <span class="settings-meta-value">848 AWS / GCP / Azure services · 27 categories</span>
+              </div>
+              <div class="settings-about-row">
+                <span class="settings-meta-label">Payment Gateway</span>
+                <span class="settings-meta-value">Stripe Payments &amp; Customer Portal</span>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <span class="settings-card-title">Legal &amp; Compliance</span>
+                <span class="settings-card-desc">Terms of service and enterprise privacy</span>
+              </div>
+              <div class="settings-links-row">
+                <a href="/privacy" class="settings-text-link" target="_blank">Privacy Policy</a>
+                <a href="/terms" class="settings-text-link" target="_blank">Terms of Service</a>
+                <a href="/docs/runbook.md" class="settings-text-link" target="_blank">Documentation</a>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /.modal-body -->
+      </main>
+
     </div><!-- /.modal-card -->
   </div><!-- /#settings-modal -->
 

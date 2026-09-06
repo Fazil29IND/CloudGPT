@@ -21,6 +21,7 @@ from .hnsw_index import HNSWIndex
 from .quake_index import QuakeIndex
 from config import get_settings
 from embeddings.embedding_engine import EmbeddingEngine
+from embeddings.qdrant_manager import QdrantManager
 from embeddings.pinecone_manager import PineconeManager
 
 logger = logging.getLogger(__name__)
@@ -91,10 +92,12 @@ class HNSWRetriever:
         self,
         embedding_engine: EmbeddingEngine,
         hnsw_index: HNSWIndex | None = None,
-        pinecone_manager: PineconeManager | None = None,
+        vector_manager: QdrantManager | PineconeManager | None = None,
+        pinecone_manager: Any | None = None,
     ) -> None:
         self.embedding_engine = embedding_engine
-        self.pinecone_manager = pinecone_manager
+        self.vector_manager = vector_manager or pinecone_manager
+        self.pinecone_manager = self.vector_manager
         self._hnsw_index = hnsw_index
 
     @property
@@ -136,10 +139,11 @@ class HNSWRetriever:
                         ))
                     return results
 
-            # 2. Pinecone Serverless HNSW fallback if native index is empty or not yet seeded
-            if self.pinecone_manager and hasattr(self.pinecone_manager, "search_dense"):
-                target_namespace = namespace or self.pinecone_manager.active_namespace("services")
-                search_results = await self.pinecone_manager.search_dense(
+            # 2. Remote Qdrant / Vector DB fallback if native index is empty or not yet seeded
+            vm = self.vector_manager or self.pinecone_manager
+            if vm and hasattr(vm, "search_dense"):
+                target_namespace = namespace or vm.active_namespace("services")
+                search_results = await vm.search_dense(
                     query_vector=query_vector,
                     filter_conditions=filters,
                     limit=top_k,
@@ -173,10 +177,12 @@ class QuakeRetriever:
         self,
         embedding_engine: EmbeddingEngine,
         quake_index: QuakeIndex | None = None,
-        pinecone_manager: PineconeManager | None = None,
+        vector_manager: QdrantManager | PineconeManager | None = None,
+        pinecone_manager: Any | None = None,
     ) -> None:
         self.embedding_engine = embedding_engine
-        self.pinecone_manager = pinecone_manager
+        self.vector_manager = vector_manager or pinecone_manager
+        self.pinecone_manager = self.vector_manager
         self._quake_index = quake_index
 
     @property
@@ -225,10 +231,11 @@ class QuakeRetriever:
                         ))
                     return results
 
-            # 2. Remote fallback to Pinecone if Quake index is empty
-            if self.pinecone_manager and hasattr(self.pinecone_manager, "search_dense"):
-                target_namespace = namespace or self.pinecone_manager.active_namespace("services")
-                search_results = await self.pinecone_manager.search_dense(
+            # 2. Remote fallback to Qdrant / vector database if Quake index is empty
+            vm = self.vector_manager or self.pinecone_manager
+            if vm and hasattr(vm, "search_dense"):
+                target_namespace = namespace or vm.active_namespace("services")
+                search_results = await vm.search_dense(
                     query_vector=query_vector,
                     filter_conditions=filters,
                     limit=top_k,
@@ -252,20 +259,22 @@ class QuakeRetriever:
 
 
 class DenseRetriever:
-    """Backward-compatible dense retriever facade combining HNSW and Pinecone."""
+    """Backward-compatible dense retriever facade combining HNSW and Qdrant / Vector DB."""
 
     def __init__(
         self,
         embedding_engine: EmbeddingEngine,
-        pinecone_manager: PineconeManager,
+        vector_manager: QdrantManager | PineconeManager | None = None,
         hnsw_index: HNSWIndex | None = None,
+        pinecone_manager: Any | None = None,
     ) -> None:
         self.embedding_engine = embedding_engine
-        self.pinecone_manager = pinecone_manager
+        self.vector_manager = vector_manager or pinecone_manager
+        self.pinecone_manager = self.vector_manager
         self.hnsw_retriever = HNSWRetriever(
             embedding_engine=embedding_engine,
             hnsw_index=hnsw_index,
-            pinecone_manager=pinecone_manager,
+            vector_manager=self.vector_manager,
         )
 
     async def retrieve(

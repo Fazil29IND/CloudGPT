@@ -927,7 +927,19 @@ async def readiness() -> dict[str, str]:
         raise HTTPException(status_code=503, detail="A required dependency is unavailable") from exc
 
     settings = get_settings()
-    if settings.pinecone_api_key:
+    if getattr(settings, "has_qdrant", False):
+        try:
+            from embeddings.qdrant_manager import QdrantManager
+            qm = QdrantManager(settings)
+            is_compatible = await asyncio.to_thread(qm.check_dimension_compatibility)
+            if not is_compatible:
+                logger.warning("Readiness Qdrant dimension mismatch check failed")
+                raise HTTPException(status_code=503, detail="Vector index dimension mismatch")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("Readiness Qdrant check encountered error: %s", exc)
+    elif settings.pinecone_api_key:
         try:
             from embeddings.pinecone_manager import PineconeManager
             pm = PineconeManager(settings)

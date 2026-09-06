@@ -38,6 +38,7 @@ from cloud_apis.aws_tools import AWSTools
 from cloud_apis.azure_tools import AzureTools
 from cloud_apis.gcp_tools import GCPTools
 from embeddings.embedding_engine import EmbeddingEngine
+from embeddings.qdrant_manager import QdrantManager
 from embeddings.pinecone_manager import PineconeManager
 from llm.context_builder import ContextBuilder
 from llm.history_budget import trim_history_by_tokens, compact_history_turns
@@ -302,23 +303,30 @@ class AgentPipeline:
                 model_name=self.settings.embedding_model,
                 dimension=self.settings.embedding_dimension
             )
-            self.pinecone_manager = PineconeManager(self.settings)
+            if hasattr(self.settings, "has_qdrant") and self.settings.has_qdrant:
+                self.vector_manager = QdrantManager(self.settings)
+            elif getattr(self.settings, "pinecone_api_key", None):
+                self.vector_manager = PineconeManager(self.settings)
+            else:
+                self.vector_manager = QdrantManager(self.settings)
+
+            self.pinecone_manager = self.vector_manager
             self.hnsw_retriever = HNSWRetriever(
                 embedding_engine=self.embedding_engine,
                 hnsw_index=get_default_hnsw_index(self.settings),
-                pinecone_manager=self.pinecone_manager,
+                vector_manager=self.vector_manager,
             )
             self.quake_retriever = QuakeRetriever(
                 embedding_engine=self.embedding_engine,
                 quake_index=get_default_quake_index(self.settings),
-                pinecone_manager=self.pinecone_manager,
+                vector_manager=self.vector_manager,
             )
             dense = DenseRetriever(
                 self.embedding_engine,
-                self.pinecone_manager,
+                vector_manager=self.vector_manager,
                 hnsw_index=self.hnsw_retriever.hnsw_index,
             )
-            sparse = SparseRetriever(self.embedding_engine, self.pinecone_manager)
+            sparse = SparseRetriever(self.embedding_engine, self.vector_manager)
             self.hybrid_retriever = HybridRetriever(
                 dense_retriever=dense,
                 sparse_retriever=sparse,
@@ -1113,10 +1121,11 @@ async def resolve_chat_history(
     session_id: str | None,
     limit: int | None = None,
     emit_event: EmitEvent | None = None,
+    tier: str = "Free",
 ) -> tuple[list[dict], str | None]:
     """
     Retrieve chat history using configured max_history_messages,
-    trim according to history_token_budget, and trigger rolling compaction if enabled.
+    trim according to history_token_budget (tier-aware), and trigger rolling compaction if enabled.
     Returns (trimmed_history, session_summary).
     """
     if not user_id and not session_id:
@@ -1125,8 +1134,15 @@ async def resolve_chat_history(
     effective_limit = limit or pipeline.settings.max_history_messages
     raw_history = await get_fast_chat_history(user_id, session_id, limit=effective_limit)
 
-    token_budget = getattr(pipeline.settings, "history_token_budget", 1500)
-    kept_history, dropped_history = trim_history_by_tokens(raw_history, token_budget)
+    tier_norm = (tier or "Free").capitalize()
+    if tier_norm == "Pro":
+        token_budget = getattr(pipeline.settings, "history_token_budget_pro", 4000)
+    elif tier_norm in ("Max", "Developer"):
+        token_budget = getattr(pipeline.settings, "history_token_budget_max", 8000)
+    else:
+        token_budget = getattr(pipeline.settings, "history_token_budget", 1500)
+
+    kept_history, dropped_history = trim_history_by_tokens(raw_history, max_tokens=token_budget, tier=tier_norm)
 
     # Retrieve cached or persistent session summary
     session_summary = await get_cached_session_summary(user_id, session_id)
@@ -1203,8 +1219,12 @@ def _build_pipeline_messages(
         user_msg["attachments"] = attachment_texts
 
     if session_summary:
-        summary_annotation = f"\n\n<session_summary>\n{session_summary.strip()}\n</session_summary>"
-        system_msg = {"role": "system", "content": system_msg["content"] + summary_annotation}
+        summary_annotation = f"<session_summary>\n{session_summary.strip()}\n</session_summary>\n\n"
+        if getattr(pipeline.settings, "enable_kv_cache_prefix_optimization", True):
+            # Invariant prefix: keep system_msg untouched so KV prompt caching hits 100%
+            user_msg = {"role": "user", "content": summary_annotation + user_msg["content"]}
+        else:
+            system_msg = {"role": "system", "content": system_msg["content"] + "\n\n" + summary_annotation.strip()}
 
     if chat_history:
         messages = [system_msg] + chat_history + [user_msg]
@@ -1519,10 +1539,16 @@ async def execute_agent_pipeline(
     }.get(tier, getattr(pipeline.settings, "prompt_budget_free", 4000)) if getattr(pipeline.settings, "enable_context_budget", True) else None
 
     if tier_prompt_budget:
+        has_attachments = bool(attachment_texts and len(attachment_texts) > 0)
+        is_deep_workload = bool((chat_history and len(chat_history) >= 4))
+        generator_model = getattr(pipeline.settings, "gemini_model_generator", None)
         tier_prompt_budget = calculate_effective_prompt_budget(
             tier_budget=tier_prompt_budget,
-            model_name=None,
+            model_name=generator_model,
             max_output_tokens=getattr(pipeline.settings, "chat_max_output_tokens", 4096),
+            tier=tier,
+            has_attachments=has_attachments,
+            is_deep_workload=is_deep_workload,
         )
 
     t0_ctx = time.perf_counter()
@@ -1989,7 +2015,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatResponse:
                 existing_history = await get_fast_chat_history(user_id, session_id, limit=1)
                 is_first_prompt = (len(existing_history) == 0)
 
-            history, session_summary = await resolve_chat_history(user_id, session_id)
+            history, session_summary = await resolve_chat_history(user_id, session_id, tier=entitlements.plan_key)
             user_memories = None
             if user_id and getattr(entitlements, "has_user_memory", False):
                 user_memories = await get_user_memories_cached(user_id)
@@ -2248,7 +2274,7 @@ async def chat_stream_endpoint(payload: ChatRequest, request: Request) -> Stream
                 existing_msgs = await get_fast_chat_history(user_id, session_id, limit=1)
                 is_first_prompt = (len(existing_msgs) == 0)
 
-            history, session_summary = await resolve_chat_history(user_id, session_id, emit_event=emit_event)
+            history, session_summary = await resolve_chat_history(user_id, session_id, emit_event=emit_event, tier=entitlements.plan_key)
             history_hash = hashlib.sha256(
                 "|".join(f"{m.get('role', '')}:{m.get('content', '')[:500]}" for m in (history or [])[-6:]).encode()
             ).hexdigest()[:16] if history else None
@@ -2722,15 +2748,16 @@ async def truncate_session_endpoint(session_id: str, payload: TruncateSessionReq
 async def health_check() -> dict[str, Any]:
     """Check health of vector database, configuration and agent services."""
     settings = get_settings()
-    pinecone_status = "uninitialized"
+    vdb = getattr(pipeline, "vector_manager", None) or getattr(pipeline, "pinecone_manager", None)
+    vector_status = "uninitialized"
     try:
-        if pipeline.pinecone_manager:
-            ok = await pipeline.pinecone_manager.health_check()
-            pinecone_status = "connected" if ok else "unhealthy"
+        if vdb:
+            ok = await vdb.health_check()
+            vector_status = "connected" if ok else "unhealthy"
         else:
-            pinecone_status = f"index: {settings.pinecone_index_name} (not initialized)"
+            vector_status = f"collection: {getattr(settings, 'qdrant_collection', 'cloud-docs')} (ready)"
     except Exception as e:
-        pinecone_status = f"error: {e}"
+        vector_status = f"error: {e}"
 
     from core.redis_client import redis_client
     redis_status = "connected" if redis_client.is_available else ("disabled" if not settings.redis_enabled else "unreachable")
@@ -2762,7 +2789,9 @@ async def health_check() -> dict[str, Any]:
             "router_model": active_model,
         },
         "always_web_search": settings.always_web_search,
-        "pinecone": pinecone_status,
+        "qdrant": vector_status,
+        "vector_db": vector_status,
+        "pinecone": vector_status,
         "embedding_model": settings.embedding_model,
     }
 
@@ -2771,12 +2800,17 @@ async def health_check() -> dict[str, Any]:
 async def source_stats() -> dict[str, Any]:
     """Retrieve indexed documentation collection metrics."""
     try:
-        if pipeline.pinecone_manager:
-            stats = await pipeline.pinecone_manager.get_collection_stats()
+        vdb = getattr(pipeline, "vector_manager", None) or getattr(pipeline, "pinecone_manager", None)
+        if vdb:
+            stats = await vdb.get_collection_stats()
             return {"status": "ok", "stats": stats}
     except Exception as e:
         logger.warning("Error fetching stats", error=str(e))
-    return {"status": "ok", "index": get_settings().pinecone_index_name, "points_count": 0}
+    return {
+        "status": "ok",
+        "collection": getattr(get_settings(), "qdrant_collection", "cloud-docs"),
+        "points_count": 0,
+    }
 
 
 @router.get("/user/memory")
@@ -2850,6 +2884,17 @@ ALLOWED_PREF_KEYS = {
     "show_pipeline_stages",
     "always_web_search",
     "compact_messages",
+    "default_model",
+    "primary_cloud",
+    "preferred_iac",
+    "preferred_region",
+    "custom_instructions",
+    "rag_search_mode",
+    "code_line_numbers",
+    "stream_speed",
+    "theme_mode",
+    "audio_autoplay",
+    "live_cloud_tools",
 }
 
 

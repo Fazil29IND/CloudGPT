@@ -73,3 +73,29 @@ async def test_compact_history_turns_fallback_on_error():
         assert "Existing baseline." in summary
         assert "Failed compaction test" in summary
 
+
+def test_trim_history_by_tokens_tier_defaults():
+    # Long message history
+    messages = [
+        {"role": "user", "content": f"Message turn {i}: Detailed AWS networking instructions " * 10}
+        for i in range(20)
+    ]
+
+    # Free tier default (1500 tokens)
+    kept_free, dropped_free = trim_history_by_tokens(messages, max_tokens=None, tier="Free")
+    # Max tier default (8000 tokens)
+    kept_max, dropped_max = trim_history_by_tokens(messages, max_tokens=None, tier="Max")
+
+    assert len(kept_max) > len(kept_free)
+    assert len(dropped_free) > len(dropped_max)
+
+
+def test_compaction_prompt_structured_context_state():
+    from llm.history_budget import COMPACTION_PROMPT
+
+    assert "<working_context_state>" in COMPACTION_PROMPT
+    assert "</working_context_state>" in COMPACTION_PROMPT
+    assert "Cloud Providers & Regions" in COMPACTION_PROMPT
+    assert "Resources & CIDRs" in COMPACTION_PROMPT
+
+

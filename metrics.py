@@ -208,6 +208,18 @@ BILLING_EVENTS_TOTAL = Counter(
     labelnames=("provider", "event_type", "status"),
 )
 
+CONTEXT_U_CURVE_REORDERS = Counter(
+    "cloudgpt_context_u_curve_reorders_total",
+    "Evidence chunk sets reordered using U-curve attention optimization.",
+    labelnames=("tier",),
+)
+
+CONTEXT_DYNAMIC_SCALING_TOTAL = Counter(
+    "cloudgpt_context_dynamic_scaling_total",
+    "Context window dynamic budget expansion invocations.",
+    labelnames=("tier", "reason"),
+)
+
 BILLING_WEBHOOK_ERRORS_TOTAL = Counter(
     "cloudgpt_billing_webhook_errors_total",
     "Billing webhook processing errors by reason.",

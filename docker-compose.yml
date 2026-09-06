@@ -63,6 +63,8 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       SEARXNG_URL: "${SEARXNG_URL:-}"
       TAVILY_API_KEY: "${TAVILY_API_KEY:-}"
+      QDRANT_URL: "${QDRANT_URL:-http://qdrant:6333}"
+      QDRANT_API_KEY: "${QDRANT_API_KEY:-}"
       PINECONE_API_KEY: "${PINECONE_API_KEY:-}"
       EMAIL_ENABLED: "${EMAIL_ENABLED:-false}"
       SMTP_HOST: "${SMTP_HOST:-}"
@@ -98,6 +100,8 @@ services:
       EMAIL_ENABLED: "${EMAIL_ENABLED:-false}"
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_PORT: "${SMTP_PORT:-587}"
+      QDRANT_URL: "${QDRANT_URL:-http://qdrant:6333}"
+      QDRANT_API_KEY: "${QDRANT_API_KEY:-}"
       SMTP_USER: "${SMTP_USER:-}"
       SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
       SMTP_FROM_EMAIL: "${SMTP_FROM_EMAIL:-noreply@cloudgpt.local}"
@@ -208,9 +212,22 @@ services:
       - prometheus
       - loki
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: cloudgpt_qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+
 volumes:
   pgdata:
   redisdata:
+  qdrant_data:
   caddy_data:
   caddy_config:
   prometheus_data:

@@ -134,8 +134,8 @@ class Settings(BaseSettings):
     )
     billing_enabled: bool = Field(default=False)
     payment_provider: str = Field(
-        default="razorpay",
-        description="Payment provider: razorpay (INR orders) or stripe",
+        default="stripe",
+        description="Payment provider: stripe (primary), razorpay, or none",
     )
     # RazorPay (INR checkout; amounts derived from pro/max_price_inr in paise)
     razorpay_key_id: str | None = Field(default=None, description="RazorPay key id (public)")
@@ -450,9 +450,35 @@ class Settings(BaseSettings):
         description="Embedding vector dimension (384 for drop-in Pinecone compatibility, or 768 / 1536 / 3072 via MRL)",
     )
 
-    # ── Pinecone ────────────────────────────────────────────────────────
+    # ── Qdrant (Primary Vector Database) ────────────────────────────────
+    qdrant_url: str = Field(
+        default="http://localhost:6333",
+        description="Qdrant service URL (http://localhost:6333 or cloud cluster URL)",
+    )
+    qdrant_api_key: str | None = Field(
+        default=None,
+        description="Qdrant API key (required for Qdrant Cloud clusters)",
+    )
+    qdrant_collection: str = Field(
+        default="cloud-docs",
+        description="Primary Qdrant collection name",
+    )
+    qdrant_grpc_port: int = Field(
+        default=6334,
+        description="Qdrant gRPC port",
+    )
+    qdrant_prefer_grpc: bool = Field(
+        default=False,
+        description="Prefer gRPC transport over HTTP for Qdrant client",
+    )
+    qdrant_local_path: str = Field(
+        default="data/qdrant_storage",
+        description="Local on-disk storage path for offline mode / unit testing fallback",
+    )
+
+    # ── Pinecone (Legacy / Optional Fallback) ───────────────────────────
     pinecone_api_key: str | None = Field(
-        default=None, description="Pinecone API key"
+        default=None, description="Pinecone API key (optional legacy fallback)"
     )
     pinecone_index_name: str = Field(
         default="cloud-docs", description="Pinecone index name"
@@ -855,6 +881,30 @@ class Settings(BaseSettings):
         default=12000,
         description="Global prompt token budget for Max tier across all sections",
     )
+    enable_dynamic_context_scaling: bool = Field(
+        default=True,
+        description="Enable dynamic expansion of prompt context window based on model headroom and workload (attachments, deep history, multi-cloud).",
+    )
+    prompt_budget_pro_expanded: int = Field(
+        default=32000,
+        description="Expanded prompt token budget for Pro tier when heavy attachments or deep history are present.",
+    )
+    prompt_budget_max_expanded: int = Field(
+        default=64000,
+        description="Expanded prompt token budget for Max tier when heavy attachments or deep history are present.",
+    )
+    enable_attention_u_curve_packing: bool = Field(
+        default=True,
+        description="Enable U-curve attention reordering to mitigate Lost-in-the-Middle attention degradation for retrieved sources.",
+    )
+    enable_kv_cache_prefix_optimization: bool = Field(
+        default=True,
+        description="Keep system prompt invariant across turns to maximize LLM KV-cache prompt caching hits.",
+    )
+    enable_structured_context_state: bool = Field(
+        default=True,
+        description="Maintain structured working context state (resources, IDs, CIDRs, architecture decisions) across rolling history compaction.",
+    )
     enable_global_context_budget: bool = Field(
         default=True,
         description="Feature flag for global prompt token budgeting across all sections",
@@ -872,6 +922,14 @@ class Settings(BaseSettings):
     history_token_budget: int = Field(
         default=1500,
         description="Maximum token budget allocated for chat history turns in prompt",
+    )
+    history_token_budget_pro: int = Field(
+        default=4000,
+        description="Maximum token budget allocated for chat history turns in Pro tier prompt.",
+    )
+    history_token_budget_max: int = Field(
+        default=8000,
+        description="Maximum token budget allocated for chat history turns in Max tier prompt.",
     )
     history_compaction_enabled: bool = Field(
         default=True,
@@ -1242,8 +1300,16 @@ class Settings(BaseSettings):
         return bool(self.azure_subscription_id)
 
     @property
+    def has_qdrant(self) -> bool:
+        return bool(self.qdrant_url or self.qdrant_api_key or self.qdrant_local_path)
+
+    @property
     def has_pinecone(self) -> bool:
         return bool(self.pinecone_api_key)
+
+    @property
+    def has_vector_db(self) -> bool:
+        return self.has_qdrant or self.has_pinecone
 
     @property
     def cors_origin_list(self) -> list[str]:
