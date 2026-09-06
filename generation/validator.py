@@ -357,6 +357,7 @@ def apply_lite_validation(
     rag_results: list[dict[str, Any]],
     citation_mgr: Any | None,
     settings: Any,
+    tier: str = "Free",
 ) -> None:
     """Lite-tier validated grounded generation (deterministic, zero added LLM).
 
@@ -375,7 +376,9 @@ def apply_lite_validation(
         result.answer = deterministic_cleanup(answer)
         answer = result.answer
 
-        policy = policies_from_settings("Free", settings)
+        # Validation strictness follows the request's actual tier, not a
+        # hardcoded Free policy — paying tiers must not get Free-tier checks.
+        policy = policies_from_settings(tier, settings)
         if not bool(getattr(settings, "enable_lite_output_validation", True)):
             return
 

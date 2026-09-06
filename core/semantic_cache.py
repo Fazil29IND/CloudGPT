@@ -231,7 +231,7 @@ class SemanticCache:
             return 0
         loaded = 0
         try:
-            client = getattr(redis_client, "_client", None)
+            client = redis_client.client
             if client is None:
                 return 0
             settings = get_settings()

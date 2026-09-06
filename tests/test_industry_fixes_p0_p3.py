@@ -29,29 +29,49 @@ def test_csp_headers_contain_stripe_and_no_razorpay(app_instance):
 
 @pytest.mark.asyncio
 async def test_gcp_pricing_tool_realistic_catalog():
-    """Verify GCP Pricing Tool returns realistic rates instead of flat dummy constant."""
+    """Verify GCP Pricing Tool serves the static baseline catalog with honest
+    estimated provenance, and never invents prices for unknown SKUs."""
     tool = GCPPricingTool()
 
-    # Compute
+    # Compute — catalog fallback is explicitly flagged estimated.
     micro_res = await tool.get_compute_price("e2-micro")
     assert micro_res.success is True
     assert micro_res.unit_price == 0.0084
     assert micro_res.unit == "Hour"
+    assert micro_res.estimated is True
+    assert micro_res.source == "static_catalog"
 
     std4_res = await tool.get_compute_price("e2-standard-4")
     assert std4_res.success is True
     assert std4_res.unit_price == 0.1344
+    assert std4_res.estimated is True
 
     # Storage
     storage_res = await tool.get_cloud_storage_price("standard")
     assert storage_res.success is True
     assert storage_res.unit_price == 0.020
     assert storage_res.unit == "GiBy.mo"
+    assert storage_res.estimated is True
 
-    # SQL
+    # SQL — catalog-backed, always labelled estimated (no per-tier public SKU).
     sql_res = await tool.get_cloud_sql_price("db-custom-2-7680")
     assert sql_res.success is True
     assert sql_res.unit_price == 0.1030
+    assert sql_res.estimated is True
+
+    # Unknown SKUs must fail honestly instead of returning an invented default.
+    unknown_vm = await tool.get_compute_price("x9-totally-unknown-99")
+    assert unknown_vm.success is False
+    assert unknown_vm.error_message is not None
+
+    unknown_sql = await tool.get_cloud_sql_price("db-does-not-exist")
+    assert unknown_sql.success is False
+
+    # Bounded prefix matching still resolves extended machine types
+    # (custom shapes derived from a catalog base type).
+    extended = await tool.get_compute_price("e2-standard-2-custom-4-8192")
+    assert extended.success is True
+    assert extended.estimated is True
 
 
 def test_serve_cached_answer_dict_slicing_safety():

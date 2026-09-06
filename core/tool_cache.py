@@ -69,7 +69,8 @@ async def set_cached_tool_result(
         l1.set(key, result, ttl=float(ttl))
 
     if not redis_client.is_available:
-        return True
+        # Only L1 was written; report that the durable layer did not persist.
+        return False
 
     try:
         return await redis_client.set_json(key, result, ex=ttl)

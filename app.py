@@ -981,6 +981,7 @@ async def readiness() -> dict[str, str]:
         raise HTTPException(status_code=503, detail="A required dependency is unavailable") from exc
 
     settings = get_settings()
+    vector_status = "unchecked"
     if getattr(settings, "has_qdrant", False):
         try:
             from embeddings.qdrant_manager import QdrantManager
@@ -989,10 +990,13 @@ async def readiness() -> dict[str, str]:
             if not is_compatible:
                 logger.warning("Readiness Qdrant dimension mismatch check failed")
                 raise HTTPException(status_code=503, detail="Vector index dimension mismatch")
+            probe = await qm.health_check()
+            vector_status = "reachable" if probe else "degraded"
         except HTTPException:
             raise
         except Exception as exc:
             logger.warning("Readiness Qdrant check encountered error: %s", exc)
+            vector_status = "degraded"
     elif settings.pinecone_api_key:
         try:
             from embeddings.pinecone_manager import PineconeManager
@@ -1001,12 +1005,26 @@ async def readiness() -> dict[str, str]:
             if not is_compatible:
                 logger.warning("Readiness Pinecone dimension mismatch check failed")
                 raise HTTPException(status_code=503, detail="Vector index dimension mismatch")
+            probe = await pm.health_check()
+            vector_status = "reachable" if probe else "degraded"
         except HTTPException:
             raise
         except Exception as exc:
             logger.warning("Readiness Pinecone check encountered error: %s", exc)
+            vector_status = "degraded"
 
-    return {"status": "ready"}
+    # Non-critical dependencies: reported honestly, but a degraded vector store
+    # or Redis does not fail readiness — retrieval and caching degrade to
+    # sparse-only / in-memory instead of taking the whole service down.
+    from core.redis_client import redis_client as _redis
+    redis_status = (
+        "connected" if _redis.is_available
+        else ("disabled" if not settings.redis_enabled else "unreachable")
+    )
+    if vector_status == "degraded" or redis_status == "unreachable":
+        logger.warning("readiness_degraded", vector=vector_status, redis=redis_status)
+
+    return {"status": "ready", "vector_store": vector_status, "redis": redis_status}
 
 
 @app.get("/terms", response_class=HTMLResponse)

@@ -38,10 +38,13 @@ _GEMINI_THINKING_PREFIXES = (
 )
 _OPENAI_REASONING_PREFIXES = ("o1", "o3", "o4")
 
-# Circuit breaker: models that just failed with overload/quota errors are
+# Cooldown: models that just failed with overload/quota errors are
 # skipped for a cooldown window so user requests don't stall on retries.
+# State is process-local for the hot path and synced through Redis
+# (core/cooldown_sync.py) so all uvicorn workers observe the same trips.
 _MODEL_COOLDOWN_SECONDS = 300.0
 _model_cooldowns: dict[str, float] = {}
+_last_cooldown_refresh = 0.0
 
 
 class GeminiQuotaExceeded(Exception):
@@ -87,7 +90,36 @@ def _model_in_cooldown(model: str) -> bool:
 
 
 def _trip_model_cooldown(model: str) -> None:
+    global _last_cooldown_refresh
     _model_cooldowns[model] = time.monotonic() + _MODEL_COOLDOWN_SECONDS
+    from core.cooldown_sync import persist_cooldown, schedule_background
+
+    schedule_background(lambda: persist_cooldown("llmmodelcooldown", model, _MODEL_COOLDOWN_SECONDS))
+    # Other workers may have tripped cooldowns while this process was idle.
+    _last_cooldown_refresh = 0.0
+
+
+async def _refresh_cooldowns_from_redis() -> None:
+    """Merge cooldowns persisted by other workers into the local dict.
+
+    Throttled to one Redis read per second; remote state only ever extends a
+    local cooldown (a later local expiry always wins)."""
+    global _last_cooldown_refresh
+    now = time.monotonic()
+    if now - _last_cooldown_refresh < 1.0:
+        return
+    _last_cooldown_refresh = now
+    try:
+        from core.cooldown_sync import fetch_cooldowns
+
+        remote = await fetch_cooldowns("llmmodelcooldown")
+    except Exception:
+        return
+    for model, remaining in remote.items():
+        expires_at = now + remaining
+        current = _model_cooldowns.get(model)
+        if current is None or current < expires_at:
+            _model_cooldowns[model] = expires_at
 
 
 class LLMProvider(ABC):
@@ -474,6 +506,7 @@ class GeminiProvider(LLMProvider):
         thinking_level: str | None = None,
         max_output_tokens: int | None = None,
     ) -> str | AsyncIterator[str]:
+        await _refresh_cooldowns_from_redis()
         system_instruction, gemini_contents = self._convert_messages(messages, thinking_level=thinking_level)
 
         if stream:
@@ -551,6 +584,9 @@ class GeminiProvider(LLMProvider):
                 self.last_usage = {
                     "prompt_tokens": getattr(usage, "prompt_token_count", None),
                     "total_tokens": getattr(usage, "total_token_count", None),
+                    # Provider-reported thinking tokens — preferred over budget
+                    # estimates for billing margin math on thinking tiers.
+                    "thoughts_tokens": getattr(usage, "thoughts_token_count", None),
                 }
         except Exception:
             pass
@@ -676,6 +712,7 @@ class GeminiProvider(LLMProvider):
                                     self.last_usage = {
                                         "prompt_tokens": getattr(usage, "prompt_token_count", None),
                                         "total_tokens": getattr(usage, "total_token_count", None),
+                                        "thoughts_tokens": getattr(usage, "thoughts_token_count", None),
                                     }
                                 for tok in self._render_chunk(chunk, chunk_state):
                                     if not chunk_state.get("opened_think", False) and tok != THINK_END:

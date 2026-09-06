@@ -62,11 +62,11 @@ async def test_rate_limiter_redis_reconnect_resets_local_state():
     limiter._events["test-key"].append(time.monotonic())
     assert len(limiter._events["test-key"]) == 1
 
-    # Now mock Redis client as available
+    # Now mock Redis client as available, with an atomic Lua script that admits
     mock_redis = MagicMock()
-    mock_pipe = MagicMock()
-    mock_pipe.execute = AsyncMock(return_value=[0, 1, True, True])
-    mock_redis.pipeline.return_value = mock_pipe
+    mock_script = MagicMock()
+    mock_script.return_value = 1
+    mock_redis.register_script.return_value = mock_script
 
     with patch("core.rate_limit.redis_client") as mock_rc:
         mock_rc.is_available = True
@@ -77,6 +77,28 @@ async def test_rate_limiter_redis_reconnect_resets_local_state():
         # Verify local state was flushed upon reconnect
         assert not hasattr(limiter, "_fallback_since")
         assert len(limiter._events) == 0
+        # The atomic window script received the right key and limits
+        kwargs = mock_script.call_args.kwargs
+        assert kwargs["keys"] == ["ratelimit:test-key"]
+        assert kwargs["args"][2] == 10
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_redis_window_full_denies_atomically():
+    limiter = SlidingWindowRateLimiter()
+
+    mock_redis = MagicMock()
+    mock_script = MagicMock()
+    mock_script.return_value = 0  # window full — no admission
+    mock_redis.register_script.return_value = mock_script
+
+    with patch("core.rate_limit.redis_client") as mock_rc:
+        mock_rc.is_available = True
+        mock_rc.client = mock_redis
+
+        assert await limiter.allowed_async("full-key", 1) is False
+        # Denied requests must not leak into the local fallback window
+        assert "full-key" not in limiter._events
 
 
 def test_billing_checkout_configuration_error_returns_503(client):

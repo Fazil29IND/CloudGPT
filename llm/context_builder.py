@@ -699,7 +699,9 @@ class ContextPipelineEngine:
                         hr = p.get("hourly_cost", 0.0)
                         mo = p.get("monthly_cost", hr * 730.0)
                         curr = p.get("currency", "USD")
-                        cost_lines.append(f"- [{prov}] {sku}: ${hr:.4f}/hr (${mo:.2f}/mo {curr})")
+                        # Never present static-catalog numbers as verified data.
+                        est = " [ESTIMATED — static catalog, not live billing]" if p.get("estimated") else ""
+                        cost_lines.append(f"- [{prov}] {sku}: ${hr:.4f}/hr (${mo:.2f}/mo {curr}){est}")
                 if calc_results:
                     expr = calc_results.get("expression") or calc_results.get("query", "")
                     res = calc_results.get("result") or calc_results.get("formatted", "")
@@ -720,7 +722,8 @@ class ContextPipelineEngine:
                         hr = p.get("hourly_cost", 0.0)
                         mo = p.get("monthly_cost", hr * 730.0)
                         curr = p.get("currency", "USD")
-                        tool_lines.append(f"  - [{prov}] {sku}: ${hr:.4f}/hour | ${mo:.2f}/month ({curr})")
+                        est = " [ESTIMATED — static catalog, not live billing]" if p.get("estimated") else ""
+                        tool_lines.append(f"  - [{prov}] {sku}: ${hr:.4f}/hour | ${mo:.2f}/month ({curr}){est}")
                     tool_lines.append("</tool_result>")
                 if calc_results:
                     tool_lines.append('<tool_result name="calculator">')

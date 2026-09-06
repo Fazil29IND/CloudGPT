@@ -1363,6 +1363,7 @@ async def execute_agent_pipeline(
     # ── ① Exact Cache Check ───────────────────────────────────────────────────
     if _exact_candidate and not _feedback_penalty:
         try:
+            _t0 = time.perf_counter()
             _exact_ans = await get_cached_answer(
                 query=query,
                 provider_filter=provider_filter,
@@ -1393,11 +1394,13 @@ async def execute_agent_pipeline(
                     answer=ans_text,
                     token_stream=_exact_cached_stream() if stream else None,
                     routes=["RAG"],
+                    # Exact cache hit: bit-identical, previously validated answer,
+                    # so the original generation's certainty is carried over.
                     confidence=1.0,
-                    classification={"intent": "exact_cached"},
+                    classification={"intent": "exact_cached", "cache_hit": True, "cache_layer": "exact"},
                     sources=ans_sources,
                     model_used=ans_model,
-                    pipeline_timings={"exact_cache": 1.0},
+                    pipeline_timings={"exact_cache": round(time.perf_counter() - _t0, 6)},
                     pipeline_type="exact_cache",
                 )
         except Exception as e:
@@ -1407,6 +1410,7 @@ async def execute_agent_pipeline(
     if _semcache_candidate and not _feedback_penalty:
         sem_cache = get_semantic_cache()
         try:
+            _t0 = time.perf_counter()
             if query_embedding is not None:
                 cached_answer_key, sim = sem_cache.get(
                     query_embedding, threshold=pipeline.settings.semantic_cache_threshold
@@ -1443,22 +1447,23 @@ async def execute_agent_pipeline(
                                 answer=ans_text,
                                 token_stream=_cached_stream(),
                                 routes=["RAG"],
-                                confidence=0.98,
-                                classification={"intent": "semantic_cached"},
+                                # Real measured similarity, not a canned value.
+                                confidence=round(sim, 3),
+                                classification={"intent": "semantic_cached", "cache_hit": True, "cache_layer": "semantic"},
                                 sources=ans_sources,
                                 model_used=ans_model,
-                                pipeline_timings={"semantic_cache": 1.0},
+                                pipeline_timings={"semantic_cache": round(time.perf_counter() - _t0, 6)},
                                 pipeline_type="semantic_cache",
                             )
                         return PipelineResult(
                             answer=ans_text,
                             token_stream=None,
                             routes=["RAG"],
-                            confidence=0.98,
-                            classification={"intent": "semantic_cached"},
+                            confidence=round(sim, 3),
+                            classification={"intent": "semantic_cached", "cache_hit": True, "cache_layer": "semantic"},
                             sources=ans_sources,
                             model_used=ans_model,
-                            pipeline_timings={"semantic_cache": 1.0},
+                            pipeline_timings={"semantic_cache": round(time.perf_counter() - _t0, 6)},
                             pipeline_type="semantic_cache",
                         )
         except Exception as e:
@@ -1629,7 +1634,7 @@ async def execute_agent_pipeline(
             # only — the SSE contract is untouched, stored answer is annotated).
             try:
                 from generation.validator import apply_lite_validation
-                apply_lite_validation(result, query, rag_results, citation_mgr, pipeline.settings)
+                apply_lite_validation(result, query, rag_results, citation_mgr, pipeline.settings, tier=tier)
             except Exception as e:
                 logger.warning("lite_validation.stream_wiring_error", error=str(e))
             _has_attachments = bool(attachment_texts)
@@ -1681,7 +1686,7 @@ async def execute_agent_pipeline(
     # multi-dimensional output validation (zero added LLM latency).
     try:
         from generation.validator import apply_lite_validation
-        apply_lite_validation(result, query, rag_results, citation_mgr, pipeline.settings)
+        apply_lite_validation(result, query, rag_results, citation_mgr, pipeline.settings, tier=tier)
     except Exception as e:
         logger.warning("lite_validation.wiring_error", error=str(e))
 
@@ -2081,6 +2086,11 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatResponse:
             # Separate reasoning (<think>) content from the visible answer.
             thinking_text, answer = split_thinking(raw_answer)
             thinking_tokens = _count_tokens(thinking_text) if thinking_text else 0
+            # Prefer the provider-reported thinking token count when the API
+            # returned one; the text-derived count is only a fallback estimate.
+            _reported_thoughts = (getattr(result, "usage", None) or {}).get("thoughts_tokens")
+            if isinstance(_reported_thoughts, int) and _reported_thoughts > 0:
+                thinking_tokens = _reported_thoughts
             thinking_summary = thinking_text[:500].strip() if thinking_text else ""
 
             logger.info(
@@ -2436,6 +2446,10 @@ async def chat_stream_endpoint(payload: ChatRequest, request: Request) -> Stream
             classification = result.classification
             sources_dump = result.sources
             thinking_tokens = _count_tokens(thinking_text) if thinking_text else 0
+            # Prefer the provider-reported thinking token count when available.
+            _reported_thoughts = (getattr(result, "usage", None) or {}).get("thoughts_tokens")
+            if isinstance(_reported_thoughts, int) and _reported_thoughts > 0:
+                thinking_tokens = _reported_thoughts
 
             logger.info(
                 "chat.pipeline_timings",
@@ -2892,8 +2906,8 @@ async def health_check() -> dict[str, Any]:
         if vdb:
             ok = await vdb.health_check()
             vector_status = "connected" if ok else "unhealthy"
-        else:
-            vector_status = f"collection: {getattr(settings, 'qdrant_collection', 'cloud-docs')} (ready)"
+        # No vector manager initialized: report that honestly instead of a
+        # fabricated "ready" collection string.
     except Exception as e:
         vector_status = f"error: {e}"
 

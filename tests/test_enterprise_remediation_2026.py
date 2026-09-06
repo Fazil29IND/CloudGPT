@@ -7,14 +7,12 @@ Covers:
 - Hybrid RAG dense query vector reuse
 """
 
-import asyncio
 import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from file_processor import BoundedTTLCache, load_attachments_from_redis
 from tools.calculator import CalculatorTool
-from retrieval import RetrievalResult
 from retrieval.dense import DenseRetriever
 
 

@@ -129,6 +129,9 @@ class Settings(BaseSettings):
     max_price_usd: int = Field(default=79, ge=1, le=10000, description="Max plan monthly price in USD")
     pro_price_inr: int = Field(default=2999, description="Pro plan price in INR (legacy reference)")
     max_price_inr: int = Field(default=7999, description="Max plan price in INR (legacy reference)")
+    usd_inr_rate: float = Field(
+        default=85.0, gt=0, description="USD→INR conversion rate used when an INR plan price is not configured"
+    )
     chat_max_input_chars: int = Field(default=16_000, ge=100, le=200_000)
     chat_max_output_tokens: int = Field(default=4_096, ge=64, le=32_768)
     max_history_messages: int = Field(

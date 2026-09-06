@@ -245,7 +245,7 @@ async def test_generate_records_usage_metadata():
     answer = await provider.generate(messages=[{"role": "user", "content": "hi"}])
 
     assert answer == "hello"
-    assert provider.last_usage == {"prompt_tokens": 42, "total_tokens": 100}
+    assert provider.last_usage == {"prompt_tokens": 42, "total_tokens": 100, "thoughts_tokens": None}
 
 
 # ─── User-facing message ─────────────────────────────────────────────────────

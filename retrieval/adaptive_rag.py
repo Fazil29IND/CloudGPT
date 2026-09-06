@@ -1265,8 +1265,12 @@ class AdaptiveAdvancedRAGPipeline:
         emit_event: Any | None,
         pipeline_type: str,
         timings: dict[str, float],
+        similarity: float | None = None,
     ) -> Any:
-        """Serve an answer-cache hit (exact or semantic) as a PipelineResult."""
+        """Serve an answer-cache hit (exact or semantic) as a PipelineResult.
+
+        `similarity` is the measured cosine similarity for semantic hits; exact
+        hits omit it (the answer is bit-identical to the original)."""
         from api.chat_routes import PipelineResult
 
         if isinstance(cached, dict):
@@ -1295,18 +1299,26 @@ class AdaptiveAdvancedRAGPipeline:
             answer=ans_text,
             token_stream=_token_stream() if stream else None,
             routes=["RAG"],
-            confidence=0.98,
-            classification={"intent": "cached", "cache_layer": pipeline_type},
+            confidence=round(similarity, 3) if similarity is not None else 1.0,
+            classification={"intent": "cached", "cache_hit": True, "cache_layer": pipeline_type},
             sources=ans_sources,
             model_used=ans_model,
             pipeline_timings=dict(timings),
             fallback_pass="cache_hit",
             pipeline_type=pipeline_type,
+            # Cache hits are not re-validated here. Only answers that passed
+            # validation at generation time ever enter the cache, so "passed"
+            # reflects that original check; the score is genuinely unknown,
+            # not a fabricated 1.0.
             validation={
                 "cached": True,
                 "passed": True,
                 "dimensions": {
-                    "grounding": {"passed": True, "score": 1.0, "details": "served_from_cache"},
+                    "grounding": {
+                        "passed": True,
+                        "score": None,
+                        "details": "inherited_from_original_generation (cache hit, not re-validated)",
+                    },
                 },
             },
         )
@@ -1480,7 +1492,7 @@ class AdaptiveAdvancedRAGPipeline:
                                     )
                                     return self._serve_cached_answer(
                                         cached_ans, query, tier, stream, emit_event,
-                                        "semantic_cache", timings,
+                                        "semantic_cache", timings, similarity=sim,
                                     )
                     except asyncio.CancelledError:
                         raise

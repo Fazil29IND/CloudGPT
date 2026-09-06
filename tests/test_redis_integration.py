@@ -249,15 +249,15 @@ async def test_sliding_window_rate_limiter_async_with_redis():
     limiter = SlidingWindowRateLimiter()
     with patch("core.rate_limit.redis_client") as mock_rc:
         mock_rc.is_available = True
-        # Pipeline commands are synchronous calls; only execute() is awaited.
-        mock_pipe = MagicMock()
-        mock_pipe.execute = AsyncMock(return_value=[0, 1, 1, True])  # count is 1 (< maximum 2)
-        mock_rc.client.pipeline.return_value = mock_pipe
+        # Atomic Lua sliding window: script returns 1 (admitted) or 0 (denied).
+        mock_script = MagicMock()
+        mock_script.return_value = 1
+        mock_rc.client.register_script.return_value = mock_script
 
         allowed = await limiter.allowed_async("user_test", maximum=2, window_seconds=60)
         assert allowed is True
 
-        # Now test when count >= maximum
-        mock_pipe.execute.return_value = [0, 2, 1, True]  # count is 2 (>= maximum 2)
+        # Now test when the window is full
+        mock_script.return_value = 0
         allowed_exceeded = await limiter.allowed_async("user_test", maximum=2, window_seconds=60)
         assert allowed_exceeded is False

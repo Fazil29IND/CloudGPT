@@ -106,6 +106,8 @@ async def fetch_cloud_pricing(
                         "unit": getattr(r, "unit_of_measure", "1 Hour") or getattr(r, "unit", "1 Hour"),
                         "currency": getattr(r, "currency", "USD"),
                         "region": getattr(r, "region", "us-east-1"),
+                        "estimated": bool(getattr(r, "estimated", False)),
+                        "source": getattr(r, "source", ""),
                     })
     except asyncio.CancelledError:
         raise

@@ -189,7 +189,9 @@ class RedisManager:
     async def acquire_lock(self, key: str, owner_token: str, ttl_seconds: int = 20) -> bool:
         """Acquire a single-flight lock via SET key owner_token NX EX ttl_seconds."""
         if not self.is_available or not self.client:
-            # If Redis unavailable, allow proceeding without lock
+            # If Redis unavailable, allow proceeding without lock — stampede
+            # protection is silently off, so make that visible in logs.
+            logger.warning("single_flight_lock_degraded redis_unavailable key=%s", key)
             return True
         try:
             result = await self.client.set(key, owner_token, nx=True, ex=ttl_seconds)

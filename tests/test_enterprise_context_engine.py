@@ -17,7 +17,6 @@ Verifies all core architectural guarantees:
 
 from __future__ import annotations
 
-import pytest
 from llm.context_builder import ContextBuilder, ContextPipelineEngine
 from llm.context_safety import ContextSafetyGuard, detect_injection
 from llm.context_types import (

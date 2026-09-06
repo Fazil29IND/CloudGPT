@@ -50,10 +50,20 @@ def isolate_rate_limiter():
     from core.memory_cache import get_memory_cache
     from core.semantic_cache import get_semantic_cache
 
+    # LLM/embedding model cooldowns are module globals with 300s TTLs; a test
+    # that trips one (e.g. quota tests) would otherwise leak into later tests
+    # that assert on the full active candidate list.
+    import llm.provider as _llm_provider
+    import embeddings.embedding_engine as _embed_engine
+
+    _llm_provider._model_cooldowns.clear()
+
     rate_limiter.reset()
     get_memory_cache().clear()
     get_semantic_cache().clear()
     yield
+    _llm_provider._model_cooldowns.clear()
+    _embed_engine._gemini_embed_cooldown_until = 0.0
     rate_limiter.reset()
     get_memory_cache().clear()
     get_semantic_cache().clear()

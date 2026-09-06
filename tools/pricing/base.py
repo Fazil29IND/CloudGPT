@@ -18,6 +18,10 @@ class PricingResult:
     region: str = ""
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     source_url: str | None = None
+    # Provenance honesty: estimated=True means the number came from a static
+    # baseline catalog, not a live provider billing API. `source` records which.
+    estimated: bool = False
+    source: str = ""
 
     @property
     def retail_price(self) -> float:
@@ -43,6 +47,8 @@ class PricingResult:
             "unit": self.unit,
             "currency": self.currency,
             "region": self.region,
+            "estimated": self.estimated,
+            "source": self.source,
             "config": self.config,
             "timestamp": self.timestamp,
             "data": self.data or {},

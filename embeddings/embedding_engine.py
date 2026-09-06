@@ -11,9 +11,13 @@ from config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Circuit breaker for Google Gemini Embedding API
+# Embedding API cooldown: after repeated API failures the remote call is
+# muted for a window and sparse-only retrieval is used. State is process-local
+# for the hot path and synced through Redis (core/cooldown_sync.py) so all
+# uvicorn workers observe the same trips.
 _GEMINI_EMBED_COOLDOWN_SECONDS = 300.0
 _gemini_embed_cooldown_until: float = 0.0
+_last_embed_cooldown_refresh = 0.0
 
 
 def is_embed_in_cooldown() -> bool:
@@ -22,8 +26,35 @@ def is_embed_in_cooldown() -> bool:
 
 
 def trip_embed_cooldown(seconds: float = _GEMINI_EMBED_COOLDOWN_SECONDS) -> None:
-    global _gemini_embed_cooldown_until
+    global _gemini_embed_cooldown_until, _last_embed_cooldown_refresh
     _gemini_embed_cooldown_until = time.monotonic() + seconds
+    from core.cooldown_sync import persist_cooldown, schedule_background
+
+    schedule_background(
+        lambda: persist_cooldown("embedcooldown", "gemini", seconds)
+    )
+    # Other workers may have tripped the cooldown while this process was idle.
+    _last_embed_cooldown_refresh = 0.0
+
+
+async def _refresh_embed_cooldown_from_redis() -> None:
+    """Merge a cooldown persisted by another worker into the local expiry."""
+    global _gemini_embed_cooldown_until, _last_embed_cooldown_refresh
+    now = time.monotonic()
+    if now - _last_embed_cooldown_refresh < 1.0:
+        return
+    _last_embed_cooldown_refresh = now
+    try:
+        from core.cooldown_sync import fetch_cooldowns
+
+        remote = await fetch_cooldowns("embedcooldown")
+    except Exception:
+        return
+    remaining = remote.get("gemini")
+    if remaining and remaining > 0:
+        remote_until = now + remaining
+        if remote_until > _gemini_embed_cooldown_until:
+            _gemini_embed_cooldown_until = remote_until
 
 
 def _l2_norm(vec: list[float]) -> list[float]:
@@ -121,9 +152,10 @@ class EmbeddingEngine:
             raise ValueError(f"Unknown embedding provider: {self.provider}")
 
     async def _call_gemini_embed(self, contents: Any, task_type: str) -> list[list[float]]:
-        """Execute Gemini embedding call with rate limit retry, exponential backoff, model fallback, and circuit breaker."""
+        """Execute Gemini embedding call with rate limit retry, exponential backoff, model fallback, and cooldown."""
+        await _refresh_embed_cooldown_from_redis()
         if is_embed_in_cooldown():
-            logger.debug("Gemini embedding circuit breaker open; bypassing remote API call and failing fast.")
+            logger.debug("Gemini embedding cooldown active; bypassing remote API call and failing fast.")
             return []
 
         from google.genai import types

@@ -67,6 +67,11 @@ class PaymentGateway(Protocol):
     def verify_webhook(self, *, payload: bytes, signature: str | None) -> dict[str, Any]: ...
 
 
+def usd_to_inr(price_usd: int) -> int:
+    """Convert a USD display price to INR using the configured FX rate."""
+    return int(round(price_usd * get_settings().usd_inr_rate))
+
+
 @dataclass(frozen=True)
 class PlanOffer:
     key: str
@@ -91,7 +96,7 @@ class PlanOffer:
             "tokens_week": self.tokens_week,
             "features": list(self.features),
             "price_usd": self.price_usd,
-            "price_inr": self.price_inr if self.price_inr is not None else (self.price_usd * 85),
+            "price_inr": self.price_inr if self.price_inr is not None else usd_to_inr(self.price_usd),
         }
 
 
