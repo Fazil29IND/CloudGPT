@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any
 
@@ -47,21 +48,23 @@ class AWSTools:
     async def list_ec2_instances(self, region: str | None = None) -> list[dict]:
         """List running EC2 instances."""
         try:
-            client = self._get_client('ec2', region)
-            instances = []
-            paginator = client.get_paginator('describe_instances')
-            for page in paginator.paginate():
-                for reservation in page.get('Reservations', []):
-                    for inst in reservation.get('Instances', []):
-                        name = next((tag['Value'] for tag in inst.get('Tags', []) if tag['Key'] == 'Name'), 'Unknown')
-                        instances.append({
-                            'id': inst['InstanceId'],
-                            'name': name,
-                            'state': inst['State']['Name'],
-                            'type': inst['InstanceType'],
-                            'region': client.meta.region_name
-                        })
-            return instances
+            def _fetch() -> list[dict]:
+                client = self._get_client('ec2', region)
+                instances = []
+                paginator = client.get_paginator('describe_instances')
+                for page in paginator.paginate():
+                    for reservation in page.get('Reservations', []):
+                        for inst in reservation.get('Instances', []):
+                            name = next((tag['Value'] for tag in inst.get('Tags', []) if tag['Key'] == 'Name'), 'Unknown')
+                            instances.append({
+                                'id': inst['InstanceId'],
+                                'name': name,
+                                'state': inst['State']['Name'],
+                                'type': inst['InstanceType'],
+                                'region': client.meta.region_name
+                            })
+                return instances
+            return await asyncio.to_thread(_fetch)
         except ImportError as exc:
             logger.warning("cloud_sdk_missing", extra={"provider": "aws", "error": str(exc)})
             CLOUD_API_ERRORS_TOTAL.labels(provider="aws", type="import").inc()
@@ -82,16 +85,18 @@ class AWSTools:
     async def list_s3_buckets(self) -> list[dict]:
         """List S3 buckets."""
         try:
-            client = self._get_client('s3')
-            buckets = []
-            response = client.list_buckets()
-            for b in response.get('Buckets', []):
-                buckets.append({
-                    'name': b['Name'],
-                    'creation_date': b['CreationDate'].isoformat() if hasattr(b['CreationDate'], 'isoformat') else str(b['CreationDate']),
-                    'region': 'global'
-                })
-            return buckets
+            def _fetch() -> list[dict]:
+                client = self._get_client('s3')
+                buckets = []
+                response = client.list_buckets()
+                for b in response.get('Buckets', []):
+                    buckets.append({
+                        'name': b['Name'],
+                        'creation_date': b['CreationDate'].isoformat() if hasattr(b['CreationDate'], 'isoformat') else str(b['CreationDate']),
+                        'region': 'global'
+                    })
+                return buckets
+            return await asyncio.to_thread(_fetch)
         except ImportError as exc:
             logger.warning("cloud_sdk_missing", extra={"provider": "aws", "error": str(exc)})
             CLOUD_API_ERRORS_TOTAL.labels(provider="aws", type="import").inc()
@@ -112,18 +117,20 @@ class AWSTools:
     async def list_lambda_functions(self, region: str | None = None) -> list[dict]:
         """List Lambda functions."""
         try:
-            client = self._get_client('lambda', region)
-            functions = []
-            paginator = client.get_paginator('list_functions')
-            for page in paginator.paginate():
-                for func in page.get('Functions', []):
-                    functions.append({
-                        'name': func['FunctionName'],
-                        'runtime': func.get('Runtime', 'Unknown'),
-                        'state': func.get('State', 'Active'),
-                        'region': client.meta.region_name
-                    })
-            return functions
+            def _fetch() -> list[dict]:
+                client = self._get_client('lambda', region)
+                functions = []
+                paginator = client.get_paginator('list_functions')
+                for page in paginator.paginate():
+                    for func in page.get('Functions', []):
+                        functions.append({
+                            'name': func['FunctionName'],
+                            'runtime': func.get('Runtime', 'Unknown'),
+                            'state': func.get('State', 'Active'),
+                            'region': client.meta.region_name
+                        })
+                return functions
+            return await asyncio.to_thread(_fetch)
         except ImportError as exc:
             logger.warning("cloud_sdk_missing", extra={"provider": "aws", "error": str(exc)})
             CLOUD_API_ERRORS_TOTAL.labels(provider="aws", type="import").inc()
@@ -144,19 +151,21 @@ class AWSTools:
     async def list_rds_instances(self, region: str | None = None) -> list[dict]:
         """List RDS database instances."""
         try:
-            client = self._get_client('rds', region)
-            instances = []
-            paginator = client.get_paginator('describe_db_instances')
-            for page in paginator.paginate():
-                for db in page.get('DBInstances', []):
-                    instances.append({
-                        'id': db['DBInstanceIdentifier'],
-                        'engine': db['Engine'],
-                        'status': db['DBInstanceStatus'],
-                        'class': db['DBInstanceClass'],
-                        'region': client.meta.region_name
-                    })
-            return instances
+            def _fetch() -> list[dict]:
+                client = self._get_client('rds', region)
+                instances = []
+                paginator = client.get_paginator('describe_db_instances')
+                for page in paginator.paginate():
+                    for db in page.get('DBInstances', []):
+                        instances.append({
+                            'id': db['DBInstanceIdentifier'],
+                            'engine': db['Engine'],
+                            'status': db['DBInstanceStatus'],
+                            'class': db['DBInstanceClass'],
+                            'region': client.meta.region_name
+                        })
+                return instances
+            return await asyncio.to_thread(_fetch)
         except ImportError as exc:
             logger.warning("cloud_sdk_missing", extra={"provider": "aws", "error": str(exc)})
             CLOUD_API_ERRORS_TOTAL.labels(provider="aws", type="import").inc()

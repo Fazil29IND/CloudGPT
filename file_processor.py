@@ -87,7 +87,7 @@ class BoundedTTLCache:
             del self._store[k]
 
 
-_MEMORY_STAGED = BoundedTTLCache(maxsize=200, default_ttl=3600.0)
+_MEMORY_STAGED = BoundedTTLCache(maxsize=50, default_ttl=3600.0)
 
 # Magic-byte signatures for sniffing declared content types (P-04 / security plan).
 _MAGIC_SIGNATURES: tuple[tuple[bytes, str], ...] = (
@@ -399,7 +399,12 @@ async def stage_attachment(
             raise ExtractionError(f"No text content could be extracted from '{filename}'.")
 
     attachment_id = str(uuid.uuid4())
-    raw_b64 = base64.b64encode(processed_bytes).decode("ascii")
+    if kind == "image":
+        raw_b64 = image_base64
+    elif kind in ("audio", "video") or extension == "pdf" or content_type == "application/pdf":
+        raw_b64 = base64.b64encode(processed_bytes).decode("ascii")
+    else:
+        raw_b64 = None
 
     payload = {
         "attachment_id": attachment_id,

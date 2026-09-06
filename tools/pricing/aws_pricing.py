@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -88,7 +89,9 @@ class AWSPricingTool:
                 {"Type": "TERM_MATCH", "Field": "capacitystatus", "Value": "Used"},
             ]
 
-            response = self.client.get_products(ServiceCode="AmazonEC2", Filters=filters, MaxResults=1)
+            response = await asyncio.to_thread(
+                self.client.get_products, ServiceCode="AmazonEC2", Filters=filters, MaxResults=1
+            )
             price, unit = self._extract_price(response.get("PriceList", []))
 
             return PricingResult(
@@ -130,7 +133,9 @@ class AWSPricingTool:
                 {"Type": "TERM_MATCH", "Field": "databaseEngine", "Value": engine},
             ]
 
-            response = self.client.get_products(ServiceCode="AmazonRDS", Filters=filters, MaxResults=1)
+            response = await asyncio.to_thread(
+                self.client.get_products, ServiceCode="AmazonRDS", Filters=filters, MaxResults=1
+            )
             price, unit = self._extract_price(response.get("PriceList", []))
 
             return PricingResult(
@@ -171,7 +176,9 @@ class AWSPricingTool:
                 {"Type": "TERM_MATCH", "Field": "storageClass", "Value": storage_class},
             ]
 
-            response = self.client.get_products(ServiceCode="AmazonS3", Filters=filters, MaxResults=1)
+            response = await asyncio.to_thread(
+                self.client.get_products, ServiceCode="AmazonS3", Filters=filters, MaxResults=1
+            )
             price, unit = self._extract_price(response.get("PriceList", []))
 
             return PricingResult(
@@ -212,7 +219,9 @@ class AWSPricingTool:
                 {"Type": "TERM_MATCH", "Field": "group", "Value": "AWS-Lambda-Duration"},
             ]
 
-            response = self.client.get_products(ServiceCode="AWSLambda", Filters=filters, MaxResults=1)
+            response = await asyncio.to_thread(
+                self.client.get_products, ServiceCode="AWSLambda", Filters=filters, MaxResults=1
+            )
             price, unit = self._extract_price(response.get("PriceList", []))
 
             return PricingResult(

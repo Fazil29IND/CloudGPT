@@ -88,6 +88,9 @@ class Reranker:
     def rerank(self, query: str, results: list[RetrievalResult], top_k: int = 10) -> list[RetrievalResult]:
         if not results:
             return []
+        results = [r for r in results if isinstance(r, RetrievalResult) and not isinstance(r, BaseException)]
+        if not results:
+            return []
 
         if self.provider == "pinecone":
             pc_results = self._rerank_pinecone(query, results, top_k)

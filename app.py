@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import secrets
+import time
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus, urlparse
 
@@ -111,23 +112,37 @@ async def lifespan(application: FastAPI):
 
     yield
 
+    global _ARQ_POOL
+    if _ARQ_POOL is not None:
+        try:
+            await _ARQ_POOL.aclose()
+        except Exception:
+            pass
+        _ARQ_POOL = None
+
     await redis_client.close()
     await asyncio.to_thread(db.close_pool)
     logger.info("Database connection pool closed")
+
+
+_ARQ_POOL = None
+
+
+async def _get_arq_pool():
+    global _ARQ_POOL
+    if _ARQ_POOL is None:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+        _ARQ_POOL = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    return _ARQ_POOL
 
 
 async def enqueue_task(func_name: str, *args, **kwargs) -> None:
     """Enqueue an ARQ job; raises if the task queue is unreachable or redis is disabled."""
     if not settings.redis_enabled:
         raise RuntimeError("Redis is disabled; cannot enqueue background task")
-    from arq import create_pool
-    from arq.connections import RedisSettings
-
-    pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-    try:
-        await pool.enqueue_job(func_name, *args, **kwargs)
-    finally:
-        await pool.aclose()
+    pool = await _get_arq_pool()
+    await pool.enqueue_job(func_name, *args, **kwargs)
 
 
 # ── FastAPI App ──────────────────────────────────────────────────────────────
@@ -165,6 +180,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+try:
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_host_list or ["127.0.0.1", "*"])
+except ImportError:
+    pass
+
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_host_list)
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
@@ -217,12 +238,45 @@ def is_safe_redirect(url: str) -> bool:
     return True
 
 
+_USER_CACHE: dict[int, tuple[float, dict]] = {}
+
+
+def invalidate_user_cache(user_id: int) -> None:
+    """Evict user from in-memory session cache."""
+    _USER_CACHE.pop(user_id, None)
+
+
 async def get_current_user(request: Request) -> dict | None:
-    """Load the current user from session, or None if not logged in."""
+    """Load the current user from session, caching profile to prevent DB connection exhaustion."""
     user_id = request.session.get("user_id")
     if not user_id:
         return None
-    return await asyncio.to_thread(db.get_user_by_id, user_id)
+
+    now = time.monotonic()
+    cached = _USER_CACHE.get(user_id)
+    if cached and now < cached[0]:
+        return cached[1]
+
+    # Check Redis session cache if available
+    cache_key = f"user:profile:{user_id}"
+    if redis_client.is_available:
+        try:
+            profile = await redis_client.get_json(cache_key)
+            if profile and isinstance(profile, dict):
+                _USER_CACHE[user_id] = (now + 60.0, profile)
+                return profile
+        except Exception:
+            pass
+
+    user = await asyncio.to_thread(db.get_user_by_id, user_id)
+    if user and isinstance(user, dict):
+        _USER_CACHE[user_id] = (now + 60.0, user)
+        if redis_client.is_available:
+            try:
+                await redis_client.set_json(cache_key, user, ex=60)
+            except Exception:
+                pass
+    return user
 
 
 async def auth_rate_limit(request: Request) -> None:

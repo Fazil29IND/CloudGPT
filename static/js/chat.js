@@ -2032,6 +2032,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let answer = '';
     let assistant = null;
     let thinkingWasStreamed = false;
+    let answerRafPending = false;
 
     // During output generation, show this session in sidebar with loading state
     if (wasNew || !sessions.some((s) => s.session_id === sessionId)) {
@@ -2131,8 +2132,16 @@ document.addEventListener('DOMContentLoaded', () => {
               assistant = appendMessage('assistant');
             }
             answer += data.token;
-            assistant.innerHTML = renderMarkdown(answer);
-            scrollToBottom();
+            if (!answerRafPending) {
+              answerRafPending = true;
+              requestAnimationFrame(() => {
+                answerRafPending = false;
+                if (assistant) {
+                  assistant.innerHTML = renderMarkdown(answer);
+                  scrollToBottom();
+                }
+              });
+            }
           }
           if (data.error) {
             removeTyping();
@@ -2141,6 +2150,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showErrorBubble(assistant, data);
           }
           if (data.done) {
+            answerRafPending = false;
             removeTyping();
             removeStagePanelSmooth();
             if (thinkingPanel && !thinkingPanel.classList.contains('thinking-complete')) {
@@ -2219,6 +2229,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let answer = '';
     let assistant = null;
     let thinkingWasStreamed = false;
+    let answerRafPending = false;
 
     try {
       const response = await fetch('/api/chat/stream', {
@@ -2276,8 +2287,16 @@ document.addEventListener('DOMContentLoaded', () => {
               assistant = appendMessage('assistant');
             }
             answer += data.token;
-            assistant.innerHTML = renderMarkdown(answer);
-            scrollToBottom();
+            if (!answerRafPending) {
+              answerRafPending = true;
+              requestAnimationFrame(() => {
+                answerRafPending = false;
+                if (assistant) {
+                  assistant.innerHTML = renderMarkdown(answer);
+                  scrollToBottom();
+                }
+              });
+            }
           }
           if (data.error) {
             removeTyping();
@@ -2286,6 +2305,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showErrorBubble(assistant, data);
           }
           if (data.done) {
+            answerRafPending = false;
             removeTyping();
             removeStagePanelSmooth();
             if (thinkingPanel && !thinkingPanel.classList.contains('thinking-complete')) {

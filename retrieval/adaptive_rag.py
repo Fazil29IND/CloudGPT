@@ -1267,21 +1267,25 @@ class AdaptiveAdvancedRAGPipeline:
         timings: dict[str, float],
     ) -> Any:
         """Serve an answer-cache hit (exact or semantic) as a PipelineResult."""
-        from api.chat_routes import PipelineResult
-
-        ans_text = cached.get("answer", "")
-        ans_sources = cached.get("sources", [])
-        ans_model = cached.get("model", "cache")
+        if isinstance(cached, dict):
+            raw_ans = cached.get("answer", "")
+            ans_text = str(raw_ans.get("answer", "") if isinstance(raw_ans, dict) else (raw_ans or ""))
+            ans_sources = cached.get("sources", []) if isinstance(cached.get("sources"), list) else []
+            ans_model = str(cached.get("model", "cache") or "cache")
+        else:
+            ans_text = str(cached or "")
+            ans_sources = []
+            ans_model = "cache"
 
         if stream and emit_event:
             pass  # stage events already emitted by the caller's flow
 
         def _token_stream() -> AsyncGenerator[str, None]:
             async def _gen() -> AsyncGenerator[str, None]:
-                chunk_size = 25
+                chunk_size = 32
                 for i in range(0, len(ans_text), chunk_size):
                     yield ans_text[i:i + chunk_size]
-                    await asyncio.sleep(0)
+                    await asyncio.sleep(0.005)
             return _gen()
 
         timings.setdefault("cache_route", 0.0)

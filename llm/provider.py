@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 # Models whose APIs accept a thinking/reasoning budget.
 _GEMINI_THINKING_PREFIXES = (
+    "gemini-3.5",
+    "gemini-3.6",
     "gemini-3.7",
     "gemini-3.8",
     "gemini-3.9",

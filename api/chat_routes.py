@@ -1364,15 +1364,21 @@ async def execute_agent_pipeline(
 
                 CACHE_CASCADE_HITS.labels(tier="Free", layer="exact").inc()
                 logger.info("exact_cache.hit", query=query[:60])
-                ans_text = _exact_ans.get("answer", "")
-                ans_sources = _exact_ans.get("sources", [])
-                ans_model = _exact_ans.get("model", "exact-cache")
+                if isinstance(_exact_ans, dict):
+                    raw_exact = _exact_ans.get("answer", "")
+                    ans_text = str(raw_exact.get("answer", "") if isinstance(raw_exact, dict) else (raw_exact or ""))
+                    ans_sources = _exact_ans.get("sources", []) if isinstance(_exact_ans.get("sources"), list) else []
+                    ans_model = str(_exact_ans.get("model", "exact-cache") or "exact-cache")
+                else:
+                    ans_text = str(_exact_ans or "")
+                    ans_sources = []
+                    ans_model = "exact-cache"
 
                 async def _exact_cached_stream() -> AsyncGenerator[str, None]:
-                    chunk_size = 25
+                    chunk_size = 32
                     for i in range(0, len(ans_text), chunk_size):
                         yield ans_text[i:i + chunk_size]
-                        await asyncio.sleep(0)
+                        await asyncio.sleep(0.005)
 
                 return PipelineResult(
                     answer=ans_text,
@@ -1408,15 +1414,22 @@ async def execute_agent_pipeline(
                             tier="Free" if tier == "Free" else tier, layer="semantic"
                         ).inc()
                         logger.info("semantic_cache.hit", similarity=round(sim, 3), query=query[:60])
-                        ans_text = cached_ans.get("answer", "") if isinstance(cached_ans, dict) else str(cached_ans)
-                        ans_sources = cached_ans.get("sources", []) if isinstance(cached_ans, dict) else []
-                        ans_model = cached_ans.get("model", "semantic-cache") if isinstance(cached_ans, dict) else "semantic-cache"
+                        if isinstance(cached_ans, dict):
+                            raw_ans = cached_ans.get("answer", "")
+                            ans_text = str(raw_ans.get("answer", "") if isinstance(raw_ans, dict) else (raw_ans or ""))
+                            ans_sources = cached_ans.get("sources", []) if isinstance(cached_ans.get("sources"), list) else []
+                            ans_model = str(cached_ans.get("model", "semantic-cache") or "semantic-cache")
+                        else:
+                            ans_text = str(cached_ans or "")
+                            ans_sources = []
+                            ans_model = "semantic-cache"
+
                         if stream:
                             async def _cached_stream() -> AsyncGenerator[str, None]:
-                                chunk_size = 25
+                                chunk_size = 32
                                 for i in range(0, len(ans_text), chunk_size):
                                     yield ans_text[i:i + chunk_size]
-                                    await asyncio.sleep(0)
+                                    await asyncio.sleep(0.005)
                             return PipelineResult(
                                 answer=ans_text,
                                 token_stream=_cached_stream(),
