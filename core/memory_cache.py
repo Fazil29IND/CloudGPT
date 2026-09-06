@@ -47,6 +47,13 @@ class MemoryCache:
     def invalidate(self, key: str) -> None:
         self._store.pop(key, None)
 
+    def invalidate_prefix(self, prefix: str) -> int:
+        """Evict all entries starting with prefix."""
+        to_del = [k for k in self._store if k.startswith(prefix)]
+        for k in to_del:
+            self._store.pop(k, None)
+        return len(to_del)
+
     def clear(self) -> None:
         self._store.clear()
 

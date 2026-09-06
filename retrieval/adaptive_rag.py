@@ -1363,6 +1363,7 @@ class AdaptiveAdvancedRAGPipeline:
         cache_decision = None
         _policy_record: dict[str, Any] | None = None
         _router_embedding: list[float] | None = None
+        _has_attachments = bool(attachment_texts)
         if getattr(self.settings, "enable_adaptive_cache_router", True):
             try:
                 from core.cache_policy import (
@@ -1377,6 +1378,8 @@ class AdaptiveAdvancedRAGPipeline:
                     strategy=transformed.get("routing_path") or transformed.get("strategy"),
                     classification=classification,
                     tier=tier,
+                    has_attachments=_has_attachments,
+                    chat_history=chat_history,
                     settings=self.settings,
                 )
                 if getattr(self.settings, "enable_feedback_cache_policy", True):
@@ -1395,7 +1398,7 @@ class AdaptiveAdvancedRAGPipeline:
                 )
 
                 # ① Exact answer cache (no embedding needed).
-                if cache_decision.exact_lookup:
+                if cache_decision.exact_lookup and not _has_attachments:
                     try:
                         from core.llm_cache import get_cached_answer
                         from metrics import CACHE_CASCADE_HITS
@@ -1423,7 +1426,7 @@ class AdaptiveAdvancedRAGPipeline:
                         logger.warning("adaptive_cache.exact_lookup_failed error=%s", e)
 
                 # ② Semantic answer cache at the strategy-aware threshold.
-                if cache_decision.semantic_lookup:
+                if cache_decision.semantic_lookup and not _has_attachments and not (chat_history and len(chat_history) > 1):
                     try:
                         from core.semantic_cache import get_semantic_cache
                         from metrics import CACHE_CASCADE_HITS
@@ -1504,9 +1507,24 @@ class AdaptiveAdvancedRAGPipeline:
         async def _pricing() -> list[dict[str, Any]]:
             if "PRICING" not in getattr(classification, "routes", []):
                 return []
+            if getattr(self.settings, "enable_core_tool_cache", True):
+                try:
+                    from core.tool_cache import get_cached_tool_result
+
+                    _prov_key = ",".join(sorted(getattr(classification, "providers", []) or []))
+                    cached_pricing = await get_cached_tool_result(
+                        "cloud_pricing", {"q": query, "providers": _prov_key}
+                    )
+                    if isinstance(cached_pricing, list):
+                        logger.info("tool_cache.pricing_hit", providers=_prov_key)
+                        return cached_pricing
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.debug("tool_cache.pricing_lookup_failed error=%s", e)
             try:
                 from tools.pricing import fetch_cloud_pricing
-                return await fetch_cloud_pricing(
+                pricing_out = await fetch_cloud_pricing(
                     query=query,
                     providers=getattr(classification, "providers", []),
                     aws_tool=getattr(agent_pipeline, "aws_pricing", None),
@@ -1514,6 +1532,17 @@ class AdaptiveAdvancedRAGPipeline:
                     gcp_tool=getattr(agent_pipeline, "gcp_pricing", None),
                     timeout=2.5,
                 )
+                if pricing_out and getattr(self.settings, "enable_core_tool_cache", True):
+                    try:
+                        from core.tool_cache import set_cached_tool_result
+
+                        _prov_key = ",".join(sorted(getattr(classification, "providers", []) or []))
+                        await set_cached_tool_result(
+                            "cloud_pricing", {"q": query, "providers": _prov_key}, pricing_out
+                        )
+                    except Exception as e:
+                        logger.debug("tool_cache.pricing_write_failed error=%s", e)
+                return pricing_out
             except Exception as e:
                 logger.warning("adaptive_rag.pricing_failed", error=str(e))
                 return []
@@ -1545,7 +1574,8 @@ class AdaptiveAdvancedRAGPipeline:
         retrieve_task = asyncio.create_task(
             self._multi_query_retrieve(
                 query, transformed, provider_filter_dict,
-                classification, tier, retriever, reranker
+                classification, tier, retriever, reranker,
+                cache_decision=cache_decision,
             )
         )
         internet_task = asyncio.create_task(_internet())
@@ -1641,7 +1671,10 @@ class AdaptiveAdvancedRAGPipeline:
                 await emit_event({"status": "Reranking and compressing context..."})
 
         t0_rc = time.perf_counter()
-        compressed = await self._rerank_and_compress(query, candidates, tier, reranker, transformed=transformed)
+        compressed = await self._rerank_and_compress(
+            query, candidates, tier, reranker, transformed=transformed,
+            cache_decision=cache_decision,
+        )
         timings["rerank_compress"] = round((time.perf_counter() - t0_rc) * 1000, 2)
 
         if emit_event and getattr(self.settings, "enable_structured_stage_events", True):
@@ -1739,8 +1772,15 @@ class AdaptiveAdvancedRAGPipeline:
         )
 
         # Apex answer-cache write — permitted only when the adaptive cache
-        # router allows it and Layer-4 validation did not flag the answer.
-        if not stream and cache_decision is not None and cache_decision.answer_cache_write and answer_or_stream:
+        # router allows it, no attachments are present, and Layer-4 validation
+        # did not flag the answer.
+        if (
+            not stream
+            and cache_decision is not None
+            and cache_decision.answer_cache_write
+            and not _has_attachments
+            and answer_or_stream
+        ):
             try:
                 from core.cache_policy import answer_write_ttl, skip_answer_cache_for_validation
                 from core.llm_cache import set_cached_answer
@@ -1748,6 +1788,14 @@ class AdaptiveAdvancedRAGPipeline:
 
                 if not skip_answer_cache_for_validation(validation_out, self.settings):
                     base_ttl = int(getattr(self.settings, "redis_cache_ttl_seconds", 3600))
+                    _hh = None
+                    if chat_history:
+                        _hh = hashlib.sha256(
+                            "|".join(
+                                f"{m.get('role', '')}:{m.get('content', '')[:500]}"
+                                for m in chat_history
+                            ).encode()
+                        ).hexdigest()[:16]
                     await set_cached_answer(
                         query=query,
                         response_payload={
@@ -1757,10 +1805,11 @@ class AdaptiveAdvancedRAGPipeline:
                         },
                         model=model_used,
                         provider_filter=provider_filter,
+                        history_hash=_hh,
                         ttl_seconds=answer_write_ttl(base_ttl, query, _policy_record, self.settings),
                         settings=self.settings,
                     )
-                    if _router_embedding:
+                    if _router_embedding and not (chat_history and len(chat_history) > 1):
                         get_semantic_cache().set(
                             _router_embedding, query,
                             intent=getattr(classification, "intent", None),

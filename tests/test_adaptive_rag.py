@@ -114,6 +114,7 @@ async def test_multi_query_retrieve_rrf_and_hyde_merge(adaptive_pipeline):
 
     with patch("api.chat_routes.pipeline.embedding_engine", mock_emb), \
          patch("api.chat_routes.pipeline.pinecone_manager", mock_pinecone), \
+         patch("api.chat_routes.pipeline.quake_retriever", None), \
          patch("retrieval.adaptive_rag.get_cached_retrieval_result", return_value=None), \
          patch("retrieval.adaptive_rag.set_cached_retrieval_result", return_value=None):
         results, fallback_pass = await adaptive_pipeline._multi_query_retrieve(

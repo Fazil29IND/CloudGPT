@@ -849,7 +849,19 @@ async def _gather_pipeline_context(
                 top_results = []
                 fb_pass = "negative_cached"
             elif cached_candidates is not None:
-                top_results = cached_candidates
+                from retrieval.hybrid import RetrievalResult
+
+                top_results = [
+                    RetrievalResult(
+                        chunk_id=str(r.get("chunk_id", "")),
+                        text=str(r.get("text", r.get("content", ""))),
+                        score=float(r.get("score", 1.0)),
+                        metadata=dict(r.get("metadata", {}) or {}),
+                    )
+                    if isinstance(r, dict)
+                    else r
+                    for r in cached_candidates
+                ]
                 fb_pass = "cached"
                 CACHE_CASCADE_HITS.labels(tier="Free", layer="retrieval").inc()
             else:
@@ -1423,11 +1435,19 @@ async def execute_agent_pipeline(
             user_memories=user_memories,
         )
         res.usage = dict(_last_gen_usage.get() or {})
-        if query_embedding and getattr(pipeline.settings, "enable_semantic_cache", True) and getattr(pipeline.settings, "semantic_cache_enabled", True):
+        _has_attachments = bool(attachment_texts)
+        _is_multiturn = bool(chat_history and len(chat_history) > 1)
+        if (
+            not _has_attachments
+            and query_embedding
+            and getattr(pipeline.settings, "enable_semantic_cache", True)
+            and getattr(pipeline.settings, "semantic_cache_enabled", True)
+        ):
             try:
                 from core.cache_policy import skip_answer_cache_for_validation
 
-                get_semantic_cache().set(query_embedding, query)
+                if not _is_multiturn:
+                    get_semantic_cache().set(query_embedding, query)
                 # Feedback-driven policy: validation-failed answers are never cached.
                 _cache_ok = not skip_answer_cache_for_validation(res.validation, pipeline.settings)
                 if res.answer and not stream and _cache_ok:
@@ -1436,6 +1456,7 @@ async def execute_agent_pipeline(
                         response_payload={"answer": res.answer, "sources": res.sources, "model": res.model_used},
                         model=res.model_used,
                         provider_filter=provider_filter,
+                        history_hash=_history_hash,
                         ttl_seconds=getattr(pipeline.settings, "redis_cache_ttl_seconds", 3600),
                     )
             except Exception:
@@ -1457,23 +1478,9 @@ async def execute_agent_pipeline(
             user_memories=user_memories,
         )
         res.usage = dict(_last_gen_usage.get() or {})
-        if query_embedding and getattr(pipeline.settings, "enable_semantic_cache", True) and getattr(pipeline.settings, "semantic_cache_enabled", True):
-            try:
-                from core.cache_policy import skip_answer_cache_for_validation
-
-                get_semantic_cache().set(query_embedding, query)
-                # Feedback-driven policy: validation-failed answers are never cached.
-                _cache_ok = not skip_answer_cache_for_validation(res.validation, pipeline.settings)
-                if res.answer and not stream and _cache_ok:
-                    await set_cached_answer(
-                        query=query,
-                        response_payload={"answer": res.answer, "sources": res.sources, "model": res.model_used},
-                        model=res.model_used,
-                        provider_filter=provider_filter,
-                        ttl_seconds=getattr(pipeline.settings, "redis_cache_ttl_seconds", 3600),
-                    )
-            except Exception:
-                pass
+        # Note: AdaptiveAdvancedRAGPipeline manages its own Stage 4 answer-cache
+        # write (respecting adaptive cache router policy, feedback-boosted TTL,
+        # attachment isolation, and Layer-4 validation gating).
         return res
 
     # ── Free Tier: context assembly and generation ────────────────────────────
@@ -1569,17 +1576,27 @@ async def execute_agent_pipeline(
                 apply_lite_validation(result, query, rag_results, citation_mgr, pipeline.settings)
             except Exception as e:
                 logger.warning("lite_validation.stream_wiring_error", error=str(e))
-            if query_embedding and getattr(pipeline.settings, "enable_semantic_cache", True) and getattr(pipeline.settings, "semantic_cache_enabled", True) and result.answer:
+            _has_attachments = bool(attachment_texts)
+            _is_multiturn = bool(chat_history and len(chat_history) > 1)
+            if (
+                not _has_attachments
+                and query_embedding
+                and getattr(pipeline.settings, "enable_semantic_cache", True)
+                and getattr(pipeline.settings, "semantic_cache_enabled", True)
+                and result.answer
+            ):
                 try:
                     from core.cache_policy import skip_answer_cache_for_validation
 
                     if not skip_answer_cache_for_validation(result.validation, pipeline.settings):
-                        get_semantic_cache().set(query_embedding, query)
+                        if not _is_multiturn:
+                            get_semantic_cache().set(query_embedding, query)
                         await set_cached_answer(
                             query=query,
                             response_payload={"answer": result.answer, "sources": sources, "model": provider_name},
                             model=provider_name,
                             provider_filter=provider_filter,
+                            history_hash=_history_hash,
                             ttl_seconds=getattr(pipeline.settings, "redis_cache_ttl_seconds", 3600),
                         )
                 except Exception:
@@ -1612,17 +1629,27 @@ async def execute_agent_pipeline(
     except Exception as e:
         logger.warning("lite_validation.wiring_error", error=str(e))
 
-    if query_embedding and getattr(pipeline.settings, "enable_semantic_cache", True) and getattr(pipeline.settings, "semantic_cache_enabled", True) and result.answer:
+    _has_attachments = bool(attachment_texts)
+    _is_multiturn = bool(chat_history and len(chat_history) > 1)
+    if (
+        not _has_attachments
+        and query_embedding
+        and getattr(pipeline.settings, "enable_semantic_cache", True)
+        and getattr(pipeline.settings, "semantic_cache_enabled", True)
+        and result.answer
+    ):
         try:
             from core.cache_policy import skip_answer_cache_for_validation
 
             if not skip_answer_cache_for_validation(result.validation, pipeline.settings):
-                get_semantic_cache().set(query_embedding, query)
+                if not _is_multiturn:
+                    get_semantic_cache().set(query_embedding, query)
                 await set_cached_answer(
                     query=query,
                     response_payload={"answer": result.answer, "sources": sources, "model": model_used},
                     model=model_used,
                     provider_filter=provider_filter,
+                    history_hash=_history_hash,
                     ttl_seconds=getattr(pipeline.settings, "redis_cache_ttl_seconds", 3600),
                 )
         except Exception:

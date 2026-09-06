@@ -189,9 +189,11 @@ async def record_feedback_policy(query: str, rating: int, reason: str | None = N
                 "created_at": time.time(),
             }
             applied["recorded"] = await set_cached_query_policy(query, record, ttl)
-            # Invalidate the L1 in-process entry immediately; Redis answer keys
+            # Invalidate the L1 in-process answer entries immediately; Redis answer keys
             # are neutralized by the penalty record at read time.
-            get_memory_cache().clear()
+            mem = get_memory_cache()
+            mem.invalidate_prefix("rag:v2:answer:")
+            mem.invalidate_prefix("llm_cache:")
             applied["action"] = "penalty"
             applied["ttl_seconds"] = ttl
         else:

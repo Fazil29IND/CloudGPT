@@ -101,6 +101,8 @@ def _retrieval_key(
     embedding_model: str,
     provider_filter: Optional[str] = None,
 ) -> str:
+    if query_normalized.startswith(("agentic:", "adaptive:", "rag:v2:retrieval:")):
+        return query_normalized
     payload = f"{corpus_version}:{embedding_model}:{provider_filter or 'all'}:{query_normalized}"
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
     return f"rag:v2:retrieval:{digest}"
@@ -111,14 +113,23 @@ async def get_cached_retrieval_result(
     provider_filter: Optional[str] = None,
     settings: Any = None,
 ) -> Optional[list[dict[str, Any]]]:
-    """Retrieve cached retrieval + reranking candidate results."""
-    if not redis_client.is_available:
-        return None
-
+    """Retrieve cached retrieval + reranking candidate results with L1 memory fallback."""
     settings = settings or get_settings()
     corpus_version = getattr(settings, "cache_corpus_version", "v1")
     embedding_model = getattr(settings, "embedding_model", "default")
     key = _retrieval_key(query.strip().lower(), corpus_version, embedding_model, provider_filter)
+
+    # 1. Check L1 in-process memory cache first
+    l1 = get_memory_cache()
+    if getattr(settings, "enable_l1_cache", True):
+        l1_result = l1.get(key)
+        if l1_result is not None:
+            REDIS_CACHE_HITS.labels(layer="retrieval").inc()
+            logger.debug("L1 Retrieval Cache Hit for key: %s", key)
+            return l1_result
+
+    if not redis_client.is_available:
+        return None
 
     t0 = time.perf_counter()
     data = await redis_client.get_json(key)
@@ -128,6 +139,9 @@ async def get_cached_retrieval_result(
     if data is not None:
         REDIS_CACHE_HITS.labels(layer="retrieval").inc()
         logger.debug("Retrieval Cache Hit for key: %s", key)
+        if getattr(settings, "enable_l1_cache", True):
+            l1_ttl = getattr(settings, "memory_cache_ttl_seconds", 60)
+            l1.set(key, data, ttl=l1_ttl)
     else:
         REDIS_CACHE_MISSES.labels(layer="retrieval").inc()
 
@@ -136,23 +150,41 @@ async def get_cached_retrieval_result(
 
 async def set_cached_retrieval_result(
     query: str,
-    results: list[dict[str, Any]],
+    results: list[Any],
     provider_filter: Optional[str] = None,
     settings: Any = None,
     ttl_seconds: int = 21600,
 ) -> bool:
-    """Cache retrieval results in Redis (default TTL: 6 hours with jitter)."""
-    if not redis_client.is_available:
-        return False
-
+    """Cache retrieval results in L1 memory and Redis (default TTL: 6 hours with jitter)."""
     settings = settings or get_settings()
     corpus_version = getattr(settings, "cache_corpus_version", "v1")
     embedding_model = getattr(settings, "embedding_model", "default")
     key = _retrieval_key(query.strip().lower(), corpus_version, embedding_model, provider_filter)
-    actual_ttl = _jitter_ttl(ttl_seconds)
 
+    # Ensure all elements are clean JSON-serializable dictionaries
+    serializable_results: list[dict[str, Any]] = [
+        r
+        if isinstance(r, dict)
+        else {
+            "chunk_id": str(getattr(r, "chunk_id", "")),
+            "text": str(getattr(r, "text", "")),
+            "score": float(getattr(r, "score", 1.0)),
+            "metadata": dict(getattr(r, "metadata", {}) or {}),
+        }
+        for r in results
+    ]
+
+    # Write to L1 memory cache
+    if getattr(settings, "enable_l1_cache", True):
+        l1_ttl = getattr(settings, "memory_cache_ttl_seconds", 60)
+        get_memory_cache().set(key, serializable_results, ttl=l1_ttl)
+
+    if not redis_client.is_available:
+        return True
+
+    actual_ttl = _jitter_ttl(ttl_seconds)
     t0 = time.perf_counter()
-    success = await redis_client.set_json(key, results, ex=actual_ttl)
+    success = await redis_client.set_json(key, serializable_results, ex=actual_ttl)
     elapsed = time.perf_counter() - t0
     REDIS_LATENCY.labels(op="set_retrieval").observe(elapsed)
 
@@ -183,7 +215,7 @@ async def get_cached_answer(
     history_hash: Optional[str] = None,
     settings: Any = None,
 ) -> Optional[dict[str, Any]]:
-    """Retrieve cached final LLM answer response."""
+    """Retrieve cached final LLM answer response with L1 fallback and canonical key resolution."""
     settings = settings or get_settings()
     corpus_version = getattr(settings, "cache_corpus_version", "v1")
     prompt_version = getattr(settings, "cache_prompt_version", "v1")
@@ -207,6 +239,21 @@ async def get_cached_answer(
             MEMORY_CACHE_HITS.labels(layer="l1_answer").inc()
             logger.debug("L1 Answer Cache Hit for key: %s", key)
             return l1_result
+        # If specific model requested but missed in L1, check canonical key
+        if model:
+            canonical_key = _answer_key(
+                query_normalized=normalized_query,
+                model="",
+                mode=mode or "default",
+                corpus_version=corpus_version,
+                prompt_version=prompt_version,
+                provider_filter=provider_filter,
+                history_hash=history_hash,
+            )
+            l1_canonical = l1.get(canonical_key)
+            if l1_canonical is not None:
+                MEMORY_CACHE_HITS.labels(layer="l1_answer").inc()
+                return l1_canonical
         MEMORY_CACHE_MISSES.labels(layer="l1_answer").inc()
 
     if not redis_client.is_available:
@@ -217,6 +264,19 @@ async def get_cached_answer(
     data = await redis_client.get_json(key)
     elapsed = time.perf_counter() - t0
     REDIS_LATENCY.labels(op="get_answer").observe(elapsed)
+
+    # If specific model key missed in Redis, check canonical model-agnostic key
+    if data is None and model:
+        canonical_key = _answer_key(
+            query_normalized=normalized_query,
+            model="",
+            mode=mode or "default",
+            corpus_version=corpus_version,
+            prompt_version=prompt_version,
+            provider_filter=provider_filter,
+            history_hash=history_hash,
+        )
+        data = await redis_client.get_json(canonical_key)
 
     # Fallback to v1 legacy key for zero-downtime transition if not found in v2
     if data is None:
@@ -248,7 +308,7 @@ async def set_cached_answer(
     settings: Any = None,
     ttl_seconds: Optional[int] = None,
 ) -> bool:
-    """Cache final LLM answer in L1 memory and Redis with TTL jitter."""
+    """Cache final LLM answer in L1 memory and Redis with TTL jitter and canonical dual-write."""
     settings = settings or get_settings()
     corpus_version = getattr(settings, "cache_corpus_version", "v1")
     prompt_version = getattr(settings, "cache_prompt_version", "v1")
@@ -264,10 +324,27 @@ async def set_cached_answer(
         history_hash=history_hash,
     )
 
+    # Determine keys to write: always write the specified key, plus canonical key if model was given
+    keys_to_write = [key]
+    if model:
+        canonical_key = _answer_key(
+            query_normalized=normalized_query,
+            model="",
+            mode=mode or "default",
+            corpus_version=corpus_version,
+            prompt_version=prompt_version,
+            provider_filter=provider_filter,
+            history_hash=history_hash,
+        )
+        if canonical_key not in keys_to_write:
+            keys_to_write.append(canonical_key)
+
     # Write to L1 memory cache
     if getattr(settings, "enable_l1_cache", True):
         l1_ttl = getattr(settings, "memory_cache_ttl_seconds", 60)
-        get_memory_cache().set(key, response_payload, ttl=l1_ttl)
+        l1 = get_memory_cache()
+        for k in keys_to_write:
+            l1.set(k, response_payload, ttl=l1_ttl)
 
     if not redis_client.is_available:
         return True
@@ -276,7 +353,11 @@ async def set_cached_answer(
     actual_ttl = _jitter_ttl(base_ttl)
 
     t0 = time.perf_counter()
-    success = await redis_client.set_json(key, response_payload, ex=actual_ttl)
+    success = True
+    for k in keys_to_write:
+        res = await redis_client.set_json(k, response_payload, ex=actual_ttl)
+        if not res:
+            success = False
     elapsed = time.perf_counter() - t0
     REDIS_LATENCY.labels(op="set_answer").observe(elapsed)
 

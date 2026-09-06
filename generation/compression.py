@@ -130,35 +130,39 @@ def compress_chunk(
     max_keep_ratio: float = 0.65,
     min_keep_sentences: int = 2,
 ) -> Any:
-    """Extractively compress one RetrievalResult chunk toward a profile.
+    """Extractively compress one RetrievalResult chunk (or dict) toward a profile.
 
     Tables, code-heavy chunks, and coalesced parents are preserved intact
     (contextual guard). Returns the chunk unchanged when compression would
     destroy structure or the yield is trivial.
     """
-    text = chunk.text or ""
+    is_dict = isinstance(chunk, dict)
+    text = (chunk.get("text", chunk.get("content", "")) if is_dict else getattr(chunk, "text", None)) or ""
     original_len = len(text)
 
-    if chunk.score < keep_score_threshold:
-        chunk.metadata["compressed"] = False
+    score = float(chunk.get("score", 1.0) if is_dict else getattr(chunk, "score", 1.0))
+    metadata = chunk.setdefault("metadata", {}) if is_dict else getattr(chunk, "metadata", {})
+
+    if score < keep_score_threshold:
+        metadata["compressed"] = False
         return chunk
-    if chunk.metadata.get("is_table") or _is_table_chunk(text):
-        chunk.metadata["compressed"] = False
-        chunk.metadata["table_preserved"] = True
+    if metadata.get("is_table") or _is_table_chunk(text):
+        metadata["compressed"] = False
+        metadata["table_preserved"] = True
         return chunk
-    if chunk.metadata.get("is_coalesced_parent") and chunk.score >= 0.8:
-        chunk.metadata["compressed"] = False
-        chunk.metadata["parent_preserved"] = True
+    if metadata.get("is_coalesced_parent") and score >= 0.8:
+        metadata["compressed"] = False
+        metadata["parent_preserved"] = True
         return chunk
     if _code_block_ratio(text) >= 0.4:
-        chunk.metadata["compressed"] = False
-        chunk.metadata["code_preserved"] = True
+        metadata["compressed"] = False
+        metadata["code_preserved"] = True
         return chunk
 
     query_tokens = _content_tokens(query)
     sentences = _split_sentences(text)
     if len(sentences) <= min_keep_sentences:
-        chunk.metadata["compressed"] = False
+        metadata["compressed"] = False
         return chunk
 
     # Fenced code blocks inside prose chunks survive as atomic units.
@@ -182,22 +186,30 @@ def compress_chunk(
     target_len = int(original_len * max_keep_ratio)
     if len(rebuilt) < 60 or len(rebuilt) > target_len:
         # Compression not worthwhile — keep the full chunk.
-        chunk.metadata["compressed"] = False
+        metadata["compressed"] = False
         return chunk
 
-    chunk.metadata["compressed"] = True
-    chunk.metadata["original_length"] = original_len
-    chunk.metadata["compressed_length"] = len(rebuilt)
-    chunk.text = rebuilt
+    metadata["compressed"] = True
+    metadata["original_length"] = original_len
+    metadata["compressed_length"] = len(rebuilt)
+    if is_dict:
+        chunk["text"] = rebuilt
+    else:
+        chunk.text = rebuilt
     return chunk
 
 
 def _evidence_token_total(chunks: list[Any]) -> int:
+    def _chunk_text(c: Any) -> str:
+        if isinstance(c, dict):
+            return str(c.get("text", c.get("content", "")) or "")
+        return str(getattr(c, "text", "") or "")
+
     try:
         from llm.context_metrics import estimate_tokens
     except ImportError:  # pragma: no cover
-        return sum(len(c.text or "") // 4 for c in chunks)
-    return sum(estimate_tokens(c.text or "") for c in chunks)
+        return sum(len(_chunk_text(c)) // 4 for c in chunks)
+    return sum(estimate_tokens(_chunk_text(c)) for c in chunks)
 
 
 def compress_evidence(
