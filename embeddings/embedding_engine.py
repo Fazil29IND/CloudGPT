@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 import re
+import time
 import zlib
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,20 @@ from typing import Any
 from config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Circuit breaker for Google Gemini Embedding API
+_GEMINI_EMBED_COOLDOWN_SECONDS = 300.0
+_gemini_embed_cooldown_until: float = 0.0
+
+
+def is_embed_in_cooldown() -> bool:
+    global _gemini_embed_cooldown_until
+    return time.monotonic() < _gemini_embed_cooldown_until
+
+
+def trip_embed_cooldown(seconds: float = _GEMINI_EMBED_COOLDOWN_SECONDS) -> None:
+    global _gemini_embed_cooldown_until
+    _gemini_embed_cooldown_until = time.monotonic() + seconds
 
 
 def _l2_norm(vec: list[float]) -> list[float]:
@@ -106,7 +121,11 @@ class EmbeddingEngine:
             raise ValueError(f"Unknown embedding provider: {self.provider}")
 
     async def _call_gemini_embed(self, contents: Any, task_type: str) -> list[list[float]]:
-        """Execute Gemini embedding call with rate limit retry, exponential backoff, and model fallback."""
+        """Execute Gemini embedding call with rate limit retry, exponential backoff, model fallback, and circuit breaker."""
+        if is_embed_in_cooldown():
+            logger.debug("Gemini embedding circuit breaker open; bypassing remote API call and failing fast.")
+            return []
+
         from google.genai import types
         config = types.EmbedContentConfig(
             task_type=task_type,
@@ -132,6 +151,23 @@ class EmbeddingEngine:
                 except Exception as exc:
                     last_err = exc
                     err_text = str(exc).lower()
+
+                    # Check for daily project quota exhaustion (e.g. Free Tier limit: 1000/day)
+                    is_daily_quota = (
+                        "resource_exhausted" in err_text
+                        or "quota" in err_text
+                        or "429" in err_text
+                    ) and ("limit: 1000" in err_text or "day" in err_text or "per_day" in err_text or "freetier" in err_text)
+
+                    if is_daily_quota or ("429" in err_text and "resource_exhausted" in err_text):
+                        logger.warning(
+                            "Gemini embedding daily quota exhausted (%s). Tripping circuit breaker for %.0fs to fail fast.",
+                            exc,
+                            _GEMINI_EMBED_COOLDOWN_SECONDS,
+                        )
+                        trip_embed_cooldown(_GEMINI_EMBED_COOLDOWN_SECONDS)
+                        return []
+
                     is_rate_limit = "429" in err_text or "resource_exhausted" in err_text or "quota" in err_text
                     is_transient = "503" in err_text or "unavailable" in err_text or "timeout" in err_text
                     if (is_rate_limit or is_transient) and attempt < 2:
@@ -144,8 +180,8 @@ class EmbeddingEngine:
                     else:
                         break
 
-        logger.error("All Gemini embedding attempts failed: %s", last_err)
-        raise last_err
+        logger.warning("All Gemini embedding attempts failed (%s); returning empty vectors to trigger degraded sparse retrieval.", last_err)
+        return []
 
     async def embed_texts(self, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
         if not texts:

@@ -554,12 +554,21 @@ class AdaptiveAdvancedRAGPipeline:
         top_score = max((float(c.score) for c in candidates), default=0.0)
         thresh = float(getattr(self.settings, "adaptive_replan_feedback_threshold", 0.40))
 
-        if top_score < thresh:
-            return True, top_score, f"low_relevance_score ({top_score:.3f} < {thresh:.3f})"
+        # Hybrid search produces Reciprocal Rank Fusion (RRF) scores on scale <= 1/(60+1) ~= 0.0164
+        # (or <= 0.033 when both dense and sparse match at rank 1).
+        # When evaluating raw RRF scores, normalize against the single-list theoretical max (1/61)
+        # so that strong hybrid matches are not falsely flagged as "low relevance" (< 0.40).
+        effective_score = top_score
+        if 0.0 < top_score <= 0.05:
+            effective_score = min(top_score / (1.0 / 61.0), 1.0)
+
+        if effective_score < thresh:
+            return True, top_score, f"low_relevance_score ({effective_score:.3f} < {thresh:.3f})"
 
         if len(candidates) >= 3:
             spread = float(candidates[0].score) - float(candidates[-1].score)
-            if spread < 0.015 and top_score < 0.50:
+            effective_spread = spread if top_score > 0.05 else spread / (1.0 / 61.0)
+            if effective_spread < 0.015 and effective_score < 0.50:
                 return True, top_score, "flat_indistinguishable_candidates"
 
         # Check technical keyword coverage on top candidates
@@ -568,7 +577,7 @@ class AdaptiveAdvancedRAGPipeline:
             top_texts = " ".join((c.text or "").lower() for c in candidates[:3])
             matched = sum(1 for tok in q_tokens if tok in top_texts)
             coverage = matched / len(q_tokens)
-            if coverage < 0.35 and top_score < 0.65:
+            if coverage < 0.35 and effective_score < 0.65:
                 return True, top_score, f"keyword_coverage_gap ({coverage:.2f} < 0.35)"
 
         return False, top_score, "sufficient_retrieval"

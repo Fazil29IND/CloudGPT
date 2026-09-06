@@ -28,10 +28,11 @@ logger = logging.getLogger(__name__)
 
 # Models whose APIs accept a thinking/reasoning budget.
 _GEMINI_THINKING_PREFIXES = (
-    "gemini-3",    # 3.7-flash, 3.6-flash, 3.5-flash, 3.5-flash-lite
-    "gemini-2.5",  # gemini-2.5-pro (if ever used)
-    "gemini-2.0",  # gemini-2.0-flash (kept as known thinking model)
-    "gemini-1.5",  # gemini-1.5-pro, gemini-1.5-flash
+    "gemini-3.7",
+    "gemini-3.8",
+    "gemini-3.9",
+    "gemini-2.5",
+    "gemini-2.0-flash-thinking",
 )
 _OPENAI_REASONING_PREFIXES = ("o1", "o3", "o4")
 
@@ -61,7 +62,12 @@ class GeminiQuotaExceeded(Exception):
 
 
 def _is_thinking_gemini(model: str) -> bool:
-    return model.lower().startswith(_GEMINI_THINKING_PREFIXES)
+    m = model.lower()
+    if "flash-lite" in m or "embedding" in m:
+        return False
+    if "-thinking" in m:
+        return True
+    return m.startswith(_GEMINI_THINKING_PREFIXES)
 
 
 def _is_reasoning_openai(model: str) -> bool:
@@ -787,6 +793,16 @@ class GeminiProvider(LLMProvider):
                                     continue
 
                             if not fallback_found:
+                                if emitted_answer_tokens:
+                                    logger.warning(
+                                        "Mid-stream exception after tokens were emitted; closing gracefully (cause: %s)",
+                                        mid_exc,
+                                    )
+                                    if chunk_state.get("opened_think", False):
+                                        yield THINK_END
+                                        chunk_state["opened_think"] = False
+                                    yield "\n\n*(Response truncated due to a transient upstream connection issue)*"
+                                    return
                                 raise mid_exc
 
                 return _token_stream()
