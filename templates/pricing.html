@@ -93,10 +93,10 @@
                 <div class="card-header">
                     <h2 class="plan-name">{{ plan.display_name }}</h2>
                     <div class="price">
-                        <span class="currency">₹</span>
-                        <span class="amount" data-monthly="{{ plan.price_inr or 0 }}"
-                            data-annual="{{ (plan.price_inr or 0) * 10 }}">{% if plan.price_inr %}{{
-                            "{:,}".format(plan.price_inr) }}{% else %}0{% endif %}</span>
+                        <span class="currency">$</span>
+                        <span class="amount" data-monthly="{{ plan.price_usd or 0 }}"
+                            data-annual="{{ (plan.price_usd or 0) * 10 }}">{% if plan.price_usd %}{{
+                            "{:,}".format(plan.price_usd) }}{% else %}0{% endif %}</span>
                         <span class="period">/month</span>
                     </div>
                     {% if plan.key == 'lite' %}
@@ -222,7 +222,7 @@
                             <td><span class="dash-icon">—</span></td>
                             {% endif %}
                             {% elif row.type == 'price' %}
-                            <td>₹{{ "{:,}".format(value) }}</td>
+                            <td>${{ "{:,}".format(value) }}</td>
                             {% else %}
                             <td>{{ value }}</td>
                             {% endif %}
@@ -345,8 +345,7 @@
                     </svg>
                 </div>
                 <h3>Bank-Grade Security</h3>
-                <p>PCI-DSS compliant payment processing{% if payment_provider == 'stripe' %} powered by Stripe{% elif
-                    payment_provider == 'razorpay' %} powered by Razorpay{% endif %} with end-to-end encryption.</p>
+                <p>PCI-DSS compliant payment processing powered by Stripe with end-to-end encryption.</p>
             </div>
             <div class="trust-item">
                 <div class="trust-icon-box">
@@ -386,7 +385,6 @@
         </footer>
     </main>
 
-    <script src="/static/js/razorpay-client.js"></script>
     <script src="/static/js/pricing.js"></script>
 </body>
 

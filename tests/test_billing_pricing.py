@@ -96,8 +96,8 @@ def test_pricing_page_rendering():
     assert "Max" in html
     assert "Most Popular" in html
     assert "Best Value" in html
-    assert "2,999" in html
-    assert "7,999" in html
+    assert "29" in html
+    assert "79" in html
     assert "Free forever" in html
     assert "Compare All Features" in html
     assert "Frequently Asked Questions" in html
@@ -160,8 +160,8 @@ def test_billing_authenticated_rendering():
         assert response.status_code == 200
         html = response.text
         assert "Lite Plan" in html
-        assert "Upgrade to Pro — ₹2,999/mo" in html
-        assert "Upgrade to Max — ₹7,999/mo" in html
+        assert "Upgrade to Pro — $29/mo" in html
+        assert "Upgrade to Max — $79/mo" in html
         assert "Preview Lite" not in html
         assert "Preview Pro" not in html
 
@@ -208,8 +208,8 @@ def test_billing_pro_authenticated_rendering():
         assert "Pro Plan" in html
         assert "Active Subscription" in html
         assert "CloudGPT Pro Workspace" in html
-        assert "Upgrade to Max — ₹7,999/mo" in html
-        assert "Upgrade to Pro — ₹2,999/mo" not in html
+        assert "Upgrade to Max — $79/mo" in html
+        assert "Upgrade to Pro — $29/mo" not in html
         assert "Preview Lite" not in html
         assert "Preview Pro" not in html
         assert "Claude Sonnet" not in html

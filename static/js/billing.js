@@ -24,11 +24,6 @@
     return data;
   }
 
-  // RazorPay has no self-serve portal; hide portal controls for that provider.
-  if (paymentProvider === 'razorpay') {
-    document.querySelectorAll('.btn-portal').forEach((btn) => btn.classList.add('hidden'));
-  }
-
   // Setup checkout button handlers
   document.querySelectorAll('.btn-checkout').forEach((btn) => {
     btn.addEventListener('click', async (e) => {
@@ -41,21 +36,9 @@
 
       try {
         const result = await post('/api/billing/checkout', { plan, interval: 'month' });
-        const handled = await window.CloudGPTCheckout.startCheckout(result, {
-          plan,
-          interval: 'month',
-          onSuccess: () => {
-            showNotification('Payment verified! Your plan is now active.', 'success');
-            setTimeout(() => window.location.assign('/billing?checkout=success'), 1200);
-          },
-          onDismiss: () => {
-            btn.textContent = originalText;
-            btn.disabled = false;
-          },
-        });
-        if (!handled && result.url) {
+        if (result && result.url) {
           window.location.assign(result.url);
-        } else if (!handled) {
+        } else {
           showNotification('Checkout session initiated.', 'success');
           btn.textContent = originalText;
           btn.disabled = false;

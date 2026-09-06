@@ -124,9 +124,11 @@ class Settings(BaseSettings):
     pro_tokens_week: int = Field(default=2_000_000, ge=0)
     max_tokens_5h: int = Field(default=500_000, ge=0)
     max_tokens_week: int = Field(default=15_000_000, ge=0)
-    pricing_currency: str = Field(default="INR", description="Display currency for pricing")
-    pro_price_inr: int = Field(default=2999, description="Pro plan price in INR")
-    max_price_inr: int = Field(default=7999, description="Max plan price in INR")
+    pricing_currency: str = Field(default="USD", description="Display currency for pricing")
+    pro_price_usd: int = Field(default=29, ge=1, le=10000, description="Pro plan monthly price in USD")
+    max_price_usd: int = Field(default=79, ge=1, le=10000, description="Max plan monthly price in USD")
+    pro_price_inr: int = Field(default=2999, description="Pro plan price in INR (legacy reference)")
+    max_price_inr: int = Field(default=7999, description="Max plan price in INR (legacy reference)")
     chat_max_input_chars: int = Field(default=16_000, ge=100, le=200_000)
     chat_max_output_tokens: int = Field(default=4_096, ge=64, le=32_768)
     max_history_messages: int = Field(
@@ -135,12 +137,8 @@ class Settings(BaseSettings):
     billing_enabled: bool = Field(default=False)
     payment_provider: str = Field(
         default="stripe",
-        description="Payment provider: stripe (primary), razorpay, or none",
+        description="Payment provider: stripe (exclusive) or none",
     )
-    # RazorPay (INR checkout; amounts derived from pro/max_price_inr in paise)
-    razorpay_key_id: str | None = Field(default=None, description="RazorPay key id (public)")
-    razorpay_key_secret: str | None = Field(default=None, description="RazorPay key secret (server-only)")
-    razorpay_webhook_secret: str | None = Field(default=None, description="RazorPay webhook HMAC secret")
     stripe_secret_key: str | None = Field(default=None)
     stripe_publishable_key: str | None = Field(default=None)
     stripe_webhook_secret: str | None = Field(default=None)
@@ -1238,8 +1236,8 @@ class Settings(BaseSettings):
     @field_validator("payment_provider")
     @classmethod
     def validate_payment_provider(cls, v: str) -> str:
-        if v.lower() not in {"razorpay", "stripe", "none"}:
-            raise ValueError("payment_provider must be razorpay, stripe, or none")
+        if v.lower() not in {"stripe", "none"}:
+            raise ValueError("payment_provider must be stripe or none")
         return v.lower()
 
     @field_validator("embedding_provider")
@@ -1398,16 +1396,6 @@ class Settings(BaseSettings):
                     }
                     problems.extend(
                         f"{name} is required when billing is enabled with stripe"
-                        for name, value in required.items()
-                        if not value
-                    )
-                elif self.payment_provider == "razorpay":
-                    required = {
-                        "RAZORPAY_KEY_ID": self.razorpay_key_id,
-                        "RAZORPAY_KEY_SECRET": self.razorpay_key_secret,
-                    }
-                    problems.extend(
-                        f"{name} is required when billing is enabled with razorpay"
                         for name, value in required.items()
                         if not value
                     )

@@ -88,11 +88,8 @@ async def get_subscription(request: Request):
 async def create_checkout(data: CheckoutRequest, request: Request):
     user = await get_current_user(request)
     try:
-        result = await billing_service.checkout(user=user, plan_key=data.plan, interval=data.interval)
-        # Stripe returns a redirect URL; RazorPay returns an order payload dict.
-        if isinstance(result, dict):
-            return result
-        return {"url": result}
+        url = await billing_service.checkout(user=user, plan_key=data.plan, interval=data.interval)
+        return {"url": url}
     except BillingConfigurationError as e:
         logger.error(f"Billing configuration error: {e}")
         raise HTTPException(status_code=503, detail="Billing provider not configured")
@@ -105,35 +102,6 @@ async def create_checkout(data: CheckoutRequest, request: Request):
     except Exception:
         logger.exception("Checkout session creation failed")
         raise HTTPException(status_code=500, detail="Unable to create checkout session. Please try again.")
-
-
-class VerifyRequest(BaseModel):
-    order_id: str
-    payment_id: str
-    signature: str
-    plan: str
-    interval: str = "month"
-
-
-@router.post("/verify")
-async def verify_payment(data: VerifyRequest, request: Request):
-    """HMAC-verify a RazorPay checkout callback and activate the subscription."""
-    user = await get_current_user(request)
-    try:
-        result = await billing_service.verify_and_activate(
-            user_id=user["id"],
-            order_id=data.order_id,
-            payment_id=data.payment_id,
-            signature=data.signature,
-            plan_key=data.plan,
-            interval=data.interval,
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        logger.exception("Payment verification failed")
-        raise HTTPException(status_code=400, detail="Payment verification failed. Please contact support if you were charged.")
 
 
 @router.post("/portal")
@@ -161,13 +129,9 @@ async def create_portal(data: PortalRequest, request: Request):
 
 @router.post("/webhook")
 async def payment_webhook(request: Request):
-    """Provider webhook: RazorPay (X-Razorpay-Signature) or Stripe (stripe-signature)."""
+    """Stripe server-to-server webhook endpoint verified with stripe-signature."""
     payload = await request.body()
-    provider = billing_service.provider
-    if provider == "razorpay":
-        signature = request.headers.get("x-razorpay-signature")
-    else:
-        signature = request.headers.get("stripe-signature")
+    signature = request.headers.get("stripe-signature")
     try:
         await billing_service.process_webhook_event(payload=payload, signature=signature)
     except InvalidWebhookSignatureError as e:

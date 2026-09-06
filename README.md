@@ -70,7 +70,7 @@ access to the full Apex/Core/Lite selector with elevated quotas.
 - RAG and `ingest_services.py`: `PINECONE_API_KEY`.
 - Cloud pricing and cloud API tools: the relevant AWS, GCP, or Azure
   credentials.
-- Billing (`/pricing`, `/api/billing/*`): Razorpay or Stripe credentials when
+- Billing (`/pricing`, `/api/billing/*`): Stripe credentials when
   `BILLING_ENABLED=true`.
 - `/api/health` and session/history endpoints do not require additional
   provider keys, but session/history endpoints require sign-in.

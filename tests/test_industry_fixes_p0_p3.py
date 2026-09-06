@@ -17,15 +17,14 @@ def test_llm_tiering_preserved():
     assert settings.gemini_model_apex == "gemini-3.8-flash"
 
 
-def test_csp_headers_contain_stripe_and_razorpay(app_instance):
-    """Verify CSP header permits Stripe and Razorpay checkout scripts, frames, and connections."""
+def test_csp_headers_contain_stripe_and_no_razorpay(app_instance):
+    """Verify CSP header permits Stripe checkout scripts/frames and excludes Razorpay."""
     client = TestClient(app_instance, raise_server_exceptions=False)
     resp = client.get("/login")
     csp = resp.headers.get("content-security-policy", "")
-    assert "https://checkout.razorpay.com" in csp
     assert "https://js.stripe.com" in csp
-    assert "https://api.razorpay.com" in csp
     assert "https://api.stripe.com" in csp
+    assert "razorpay" not in csp.lower()
 
 
 @pytest.mark.asyncio

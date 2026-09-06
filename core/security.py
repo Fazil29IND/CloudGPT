@@ -138,12 +138,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; "
-            "img-src 'self' data: https: https://*.stripe.com https://*.razorpay.com; "
+            "img-src 'self' data: https: https://*.stripe.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com data:; "
-            "frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://js.stripe.com https://hooks.stripe.com; "
-            "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://js.stripe.com; "
-            "connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com https://api.stripe.com https://checkout.razorpay.com",
+            "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com; "
+            "script-src 'self' 'unsafe-inline' https://js.stripe.com; "
+            "connect-src 'self' https://api.stripe.com https://checkout.stripe.com",
         )
         response.headers.setdefault("X-Request-ID", request_id)
         return response

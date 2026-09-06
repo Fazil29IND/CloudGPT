@@ -77,6 +77,7 @@ class PlanOffer:
     tokens_5h: int | None
     tokens_week: int | None
     features: tuple[str, ...]
+    price_usd: int = 0
     price_inr: int | None = None
 
     def public_dict(self) -> dict[str, Any]:
@@ -89,7 +90,8 @@ class PlanOffer:
             "tokens_5h": self.tokens_5h,
             "tokens_week": self.tokens_week,
             "features": list(self.features),
-            "price_inr": self.price_inr,
+            "price_usd": self.price_usd,
+            "price_inr": self.price_inr if self.price_inr is not None else (self.price_usd * 85),
         }
 
 
@@ -172,81 +174,6 @@ class StripeGateway:
             raise BillingWebhookError(f"Stripe webhook construction failed: {exc}") from exc
 
 
-class RazorpayGateway:
-    """RazorPay payment gateway (INR orders + HMAC-verified callbacks).
-
-    Flow (workflow-preserving): the checkout endpoint creates a RazorPay
-    *order* server-side and returns its parameters; the frontend opens the
-    RazorPay checkout modal; the payment handler posts the payment id +
-    signature back to /api/billing/verify, which HMAC-verifies and activates
-    the subscription. Webhooks keep state in sync for captures/refunds.
-    """
-
-    provider = "razorpay"
-
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
-        if not settings.razorpay_key_id or not settings.razorpay_key_secret:
-            raise BillingConfigurationError(
-                "RazorPay is not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
-            )
-        try:
-            import razorpay
-        except ImportError as exc:
-            raise BillingConfigurationError(
-                "razorpay package is not installed. Run `pip install razorpay`."
-            ) from exc
-
-        self.client = razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
-        self.key_id = settings.razorpay_key_id
-        self.key_secret = settings.razorpay_key_secret
-        self.webhook_secret = settings.razorpay_webhook_secret
-
-    def create_customer(self, *, email: str, user_id: int) -> str:
-        customer = self.client.customer.create({
-            "email": email,
-            "notes": {"cloudgpt_user_id": str(user_id)},
-        })
-        return str(customer["id"])
-
-    def create_order(self, *, amount_inr: int, receipt: str, notes: dict[str, str]) -> dict[str, Any]:
-        """Create a RazorPay order. ``amount_inr`` is rupees; API wants paise."""
-        order = self.client.order.create({
-            "amount": int(amount_inr * 100),
-            "currency": "INR",
-            "receipt": receipt[:40],
-            "notes": notes,
-        })
-        return order
-
-    def verify_payment_signature(self, *, order_id: str, payment_id: str, signature: str) -> bool:
-        import hmac
-        import hashlib
-
-        expected = hmac.new(
-            self.key_secret.encode("utf-8"),
-            f"{order_id}|{payment_id}".encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        return hmac.compare_digest(expected, signature or "")
-
-    def verify_webhook(self, *, payload: bytes, signature: str | None) -> dict[str, Any]:
-        import hmac
-        import hashlib
-        import json
-
-        if not self.webhook_secret or not signature:
-            raise BillingConfigurationError("Webhook verification is not configured")
-        expected = hmac.new(self.webhook_secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, signature):
-            raise InvalidWebhookSignatureError("Invalid Razorpay webhook signature")
-        try:
-            return json.loads(payload.decode("utf-8"))
-        except Exception as exc:
-            raise BillingWebhookError(f"Invalid JSON payload in Razorpay webhook: {exc}") from exc
-
-
-
 class BillingService:
     def __init__(self, settings: Settings | None = None, gateway: PaymentGateway | None = None) -> None:
         self.settings = settings or get_settings()
@@ -254,13 +181,15 @@ class BillingService:
 
     @property
     def enabled(self) -> bool:
-        return self.settings.billing_enabled and self.settings.payment_provider in ("stripe", "razorpay")
+        return bool(self.settings.billing_enabled and self.settings.payment_provider == "stripe")
 
     @property
     def provider(self) -> str:
-        return self.settings.payment_provider
+        return "stripe"
 
     def offers(self) -> list[PlanOffer]:
+        pro_usd = getattr(self.settings, "pro_price_usd", 29)
+        max_usd = getattr(self.settings, "max_price_usd", 79)
         return [
             PlanOffer(
                 "lite",
@@ -276,6 +205,7 @@ class BillingService:
                     "848+ Verified Cloud Services Coverage & Cost Estimation Tools",
                     "Multi-Modal Diagnostics: Architecture diagram & config uploads (2/chat)",
                 ),
+                price_usd=0,
                 price_inr=0,
             ),
             PlanOffer(
@@ -293,6 +223,7 @@ class BillingService:
                     "Production Config & Log Diagnostics: Up to 5 architecture uploads per chat",
                     "Audio Briefings: High-fidelity voice synthesis (50,000 chars/day)",
                 ),
+                price_usd=pro_usd,
                 price_inr=self.settings.pro_price_inr,
             ),
             PlanOffer(
@@ -310,6 +241,7 @@ class BillingService:
                     "Production Config & Log Diagnostics: Up to 5 architecture uploads per chat",
                     "Audio Briefings: High-fidelity voice synthesis (50,000 chars/day)",
                 ),
+                price_usd=pro_usd * 10,
                 price_inr=self.settings.pro_price_inr * 10,
             ),
             PlanOffer(
@@ -327,6 +259,7 @@ class BillingService:
                     "Executive Voice Briefings: Enterprise audio synthesis (200,000 chars/day)",
                     "Dedicated SLA & Zero-Throttle Priority Compute Allocation",
                 ),
+                price_usd=max_usd,
                 price_inr=self.settings.max_price_inr,
             ),
             PlanOffer(
@@ -344,6 +277,7 @@ class BillingService:
                     "Executive Voice Briefings: Enterprise audio synthesis (200,000 chars/day)",
                     "Dedicated SLA & Zero-Throttle Priority Compute Allocation",
                 ),
+                price_usd=max_usd * 10,
                 price_inr=self.settings.max_price_inr * 10,
             ),
         ]
@@ -382,7 +316,7 @@ class BillingService:
             {
                 "label": "Monthly price",
                 "type": "price",
-                "cells": [0, self.settings.pro_price_inr, self.settings.max_price_inr],
+                "cells": [0, getattr(self.settings, "pro_price_usd", 29), getattr(self.settings, "max_price_usd", 79)],
             },
             {
                 "label": "Model selector",
@@ -455,14 +389,11 @@ class BillingService:
         ]
         return {"rows": rows}
 
-    def _gateway(self) -> Any:
+    def _gateway(self) -> StripeGateway:
         if not self.enabled:
             raise BillingConfigurationError("Billing is not enabled")
         if self.gateway is None:
-            if self.provider == "razorpay":
-                self.gateway = RazorpayGateway(self.settings)
-            else:
-                self.gateway = StripeGateway(self.settings)
+            self.gateway = StripeGateway(self.settings)
         return self.gateway
 
     def _offer(self, plan_key: str, interval: str) -> PlanOffer:
@@ -471,61 +402,23 @@ class BillingService:
                 return offer
         raise ValueError("Unknown plan or billing interval")
 
-    async def checkout(self, *, user: dict, plan_key: str, interval: str) -> Any:
-        """Create a checkout session.
-
-        Stripe returns a redirect URL string; RazorPay returns an order
-        payload dict consumed by the frontend checkout modal.
-        """
+    async def checkout(self, *, user: dict, plan_key: str, interval: str) -> str:
+        """Create a Stripe checkout session. Returns the hosted checkout URL string."""
         if plan_key not in {"lite", "pro", "max"} or interval not in {"month", "year"}:
             raise ValueError("Unknown plan or billing interval")
         offer = self._offer(plan_key, interval)
 
-        if self.provider == "razorpay":
-            if not offer.price_inr:
-                raise BillingConfigurationError("This plan is not available for checkout")
-            gateway = self._gateway()
-            customer = await asyncio.to_thread(db.get_billing_customer, user["id"], gateway.provider)
-            if customer:
-                customer_id = customer["provider_customer_id"]
-            else:
-                customer_id = await asyncio.to_thread(
-                    gateway.create_customer, email=user["email"], user_id=user["id"]
-                )
-                await asyncio.to_thread(db.upsert_billing_customer, user["id"], gateway.provider, customer_id)
-            order = await asyncio.to_thread(
-                gateway.create_order,
-                amount_inr=offer.price_inr,
-                receipt=f"u{user['id']}-{plan_key}-{interval}",
-                notes={
-                    "cloudgpt_user_id": str(user["id"]),
-                    "plan": plan_key,
-                    "interval": interval,
-                },
-            )
-            return {
-                "provider": "razorpay",
-                "order_id": order["id"],
-                "amount": order["amount"],
-                "currency": order.get("currency", "INR"),
-                "key_id": gateway.key_id,
-                "name": "CloudGPT",
-                "description": f"{offer.display_name} plan — {offer.model_access}",
-                "prefill": {"email": user.get("email", ""), "name": user.get("name") or ""},
-                "customer_id": customer_id,
-                "theme_color": "#09090b",
-            }
-
-        # Stripe path
         gateway = self._gateway()
-        customer = await asyncio.to_thread(db.get_billing_customer, user["id"], gateway.provider)
+        customer = await asyncio.to_thread(db.get_billing_customer, user["id"], "stripe")
         if customer:
             customer_id = customer["provider_customer_id"]
         else:
             customer_id = await asyncio.to_thread(gateway.create_customer, email=user["email"], user_id=user["id"])
-            await asyncio.to_thread(db.upsert_billing_customer, user["id"], gateway.provider, customer_id)
+            await asyncio.to_thread(db.upsert_billing_customer, user["id"], "stripe", customer_id)
 
-        amount_cents = 2900 if plan_key == "pro" else 7900
+        pro_cents = getattr(self.settings, "pro_price_usd", 29) * 100
+        max_cents = getattr(self.settings, "max_price_usd", 79) * 100
+        amount_cents = pro_cents if plan_key == "pro" else max_cents
         if interval == "year":
             amount_cents *= 10
 
@@ -541,51 +434,9 @@ class BillingService:
             amount_cents=amount_cents,
         )
 
-    async def verify_and_activate(
-        self, *, user_id: int, order_id: str, payment_id: str, signature: str,
-        plan_key: str, interval: str,
-    ) -> dict[str, Any]:
-        """HMAC-verify a RazorPay checkout callback and activate the plan.
-
-        Idempotent: a payment id already recorded as settled is a no-op.
-        """
-        if plan_key not in {"pro", "max"}:
-            raise ValueError("Unknown plan for activation")
-        if interval not in {"month", "year"}:
-            raise ValueError("Unknown billing interval")
-        gateway = self._gateway()
-        if not await asyncio.to_thread(
-            gateway.verify_payment_signature,
-            order_id=order_id, payment_id=payment_id, signature=signature,
-        ):
-            raise ValueError("Payment signature verification failed")
-
-        already = await asyncio.to_thread(db.get_billing_event, gateway.provider, payment_id)
-        if not already:
-            await asyncio.to_thread(
-                db.record_billing_event, gateway.provider, payment_id,
-                "payment.verified",
-                {"order_id": order_id, "plan": plan_key, "interval": interval},
-            )
-
-        period_days = 30 if interval == "month" else 365
-        now = datetime.now(timezone.utc)
-        await asyncio.to_thread(
-            db.upsert_subscription,
-            user_id=user_id, plan_key=plan_key, provider=gateway.provider,
-            provider_subscription_id=payment_id, status="active",
-            current_period_start=now,
-            current_period_end=now + timedelta(days=period_days),
-        )
-        return {"status": "ok", "plan": plan_key, "interval": interval, "provider": gateway.provider}
-
     async def portal(self, *, user_id: int, return_url: str) -> str:
         gateway = self._gateway()
-        if self.provider == "razorpay":
-            raise BillingConfigurationError(
-                "RazorPay does not provide a self-serve billing portal. Contact support to manage your subscription."
-            )
-        customer = await asyncio.to_thread(db.get_billing_customer, user_id, gateway.provider)
+        customer = await asyncio.to_thread(db.get_billing_customer, user_id, "stripe")
         if not customer:
             raise ValueError("No billing customer exists for this account")
         return await asyncio.to_thread(gateway.create_portal, customer_id=customer["provider_customer_id"], return_url=return_url)
@@ -620,79 +471,14 @@ class BillingService:
         return datetime.fromtimestamp(int(value), tz=timezone.utc)
 
     async def process_verified_event(self, event: dict[str, Any]) -> bool:
-        """Apply a verified provider webhook event once. Only verified events
-        affect access."""
-        provider = self.provider
-        if provider == "razorpay":
-            return await self._process_razorpay_event(event)
+        """Apply a verified provider webhook event once. Only verified events affect access."""
         return await self._process_stripe_event(event)
-
-    def _razorpay_event_identity(self, event: dict[str, Any]) -> tuple[str, str]:
-        event_type = str(event.get("event") or "")
-        event_id = (
-            event.get("payload", {})
-            .get("payment", {})
-            .get("entity", {})
-            .get("id")
-            or event.get("id")
-            or ""
-        )
-        return event_id and f"{event_type}:{event_id}" or event_id, event_type
 
     async def process_webhook_event(self, *, payload: bytes, signature: str | None) -> bool:
         """Verify and apply a provider webhook event with audit logging and metrics."""
         gateway = self._gateway()
         event = gateway.verify_webhook(payload=payload, signature=signature)
         return await self.process_verified_event(event)
-
-    async def _process_razorpay_event(self, event: dict[str, Any]) -> bool:
-        """Apply a RazorPay webhook event (payment.captured / order.paid).
-
-        Access is granted from the order notes the checkout flow attached.
-        """
-        event_id, event_type = self._razorpay_event_identity(event)
-        if not event_id or not event_type:
-            BILLING_WEBHOOK_ERRORS_TOTAL.labels(reason="missing_event_identity").inc()
-            raise MissingEventIdError("Invalid billing event: missing event ID or type")
-        inserted = await asyncio.to_thread(
-            db.record_billing_event, "razorpay", event_id, event_type, {}
-        )
-        if not inserted:
-            logger.info("razorpay_webhook_event_duplicate", event_id=event_id, event_type=event_type)
-            BILLING_EVENTS_TOTAL.labels(provider="razorpay", event_type=event_type, status="duplicate").inc()
-            return False
-        try:
-            if event_type in ("payment.captured", "order.paid"):
-                entity = (
-                    event.get("payload", {}).get("payment", {}).get("entity")
-                    or event.get("payload", {}).get("order", {}).get("entity")
-                    or {}
-                )
-                notes = entity.get("notes") or {}
-                user_id = str(notes.get("cloudgpt_user_id", ""))
-                plan_key = str(notes.get("plan", ""))
-                interval = str(notes.get("interval", "month"))
-                if user_id.isdigit() and plan_key in {"pro", "max"}:
-                    payment_id = str(entity.get("id") or entity.get("order_id") or event_id)
-                    period_days = 365 if interval == "year" else 30
-                    now = datetime.now(timezone.utc)
-                    await asyncio.to_thread(
-                        db.upsert_subscription,
-                        user_id=int(user_id), plan_key=plan_key, provider="razorpay",
-                        provider_subscription_id=payment_id, status="active",
-                        current_period_start=now,
-                        current_period_end=now + timedelta(days=period_days),
-                    )
-                    logger.info("razorpay_subscription_activated", user_id=user_id, plan=plan_key, payment_id=payment_id)
-            await asyncio.to_thread(db.mark_billing_event, event_id, "processed")
-            BILLING_EVENTS_TOTAL.labels(provider="razorpay", event_type=event_type, status="processed").inc()
-            return True
-        except Exception as exc:
-            BILLING_EVENTS_TOTAL.labels(provider="razorpay", event_type=event_type, status="failed").inc()
-            BILLING_WEBHOOK_ERRORS_TOTAL.labels(reason="razorpay_process_failed").inc()
-            logger.exception("razorpay_webhook_processing_failed", event_id=event_id, event_type=event_type, error=str(exc))
-            await asyncio.to_thread(db.mark_billing_event, event_id, "failed", "processing_error")
-            raise
 
     async def _process_stripe_event(self, event: dict[str, Any]) -> bool:
         event_id = str(event.get("id") or "")

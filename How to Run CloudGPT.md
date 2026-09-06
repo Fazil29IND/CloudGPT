@@ -219,7 +219,7 @@ CloudGPT includes a comprehensive suite of automated tests covering authenticati
 | **Terms / Privacy**      | `http://localhost:5001/terms`, `/privacy` | `GET`      | Legal pages (linked from the pricing footer)                 |
 | **Admin Dashboard**      | `http://localhost:5001/admin/users`         | `GET`      | User & usage administration (RBAC gated)                     |
 | **Chat SSE Stream**      | `/api/chat/stream`                          | `POST`     | Real-time reasoning + answer token stream                    |
-| **Billing Checkout API** | `/api/billing/*`                            | `POST/GET` | Checkout, plans catalog, webhook endpoints (Razorpay/Stripe) |
+| **Billing Checkout API** | `/api/billing/*`                            | `POST/GET` | Checkout, plans catalog, webhook endpoints (Stripe) |
 | **File Upload**          | `/api/upload`                               | `POST`     | Multimodal upload (images, audio, code, docs)                |
 | **Attachment Download**  | `/api/attachments/{id}/download`            | `GET`      | Download staged user attachments                             |
 | **Turn Truncation**      | `/api/sessions/{id}/truncate`               | `POST`     | History rollback for Undo and Inline Edit                    |

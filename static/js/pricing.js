@@ -54,20 +54,9 @@
         btn.disabled = true;
 
         const result = await post('/api/billing/checkout', { plan, interval });
-        const handled = await window.CloudGPTCheckout.startCheckout(result, {
-          plan,
-          interval,
-          onSuccess: () => {
-            window.location.assign('/billing?checkout=success');
-          },
-          onDismiss: () => {
-            btn.textContent = originalText;
-            btn.disabled = false;
-          },
-        });
-        if (!handled && result.url) {
+        if (result && result.url) {
           window.location.assign(result.url);
-        } else if (!handled) {
+        } else {
           btn.textContent = originalText;
           btn.disabled = false;
         }
