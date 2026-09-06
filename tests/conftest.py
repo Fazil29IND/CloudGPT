@@ -40,16 +40,23 @@ def app_instance():
 
 @pytest.fixture(autouse=True)
 def isolate_rate_limiter():
-    """Reset rate limiter state before each test.
+    """Reset rate limiter state and in-memory caches before each test.
 
     All TestClient requests share the same 'testclient' host fingerprint, so
     without a reset the auth rate limit (10/min) trips across unrelated tests.
+    Also clears process-local L1 answer and semantic caches to ensure test hermeticity.
     """
     from core.rate_limit import rate_limiter
+    from core.memory_cache import get_memory_cache
+    from core.semantic_cache import get_semantic_cache
 
     rate_limiter.reset()
+    get_memory_cache().clear()
+    get_semantic_cache().clear()
     yield
     rate_limiter.reset()
+    get_memory_cache().clear()
+    get_semantic_cache().clear()
 
 
 @pytest.fixture
