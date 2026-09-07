@@ -566,6 +566,34 @@ async def ingest_services_rag(
     embed_batch = 64
     batch_size = 50
 
+    def _align_vectors(chunks: list[dict], dense: list, sparse: list, namespace_label: str) -> list[dict]:
+        """Pair chunks with their vectors positionally.
+
+        The embedding engine returns fewer vectors than sent when the API fails
+        mid-batch; positional assignment would crash with IndexError and abort
+        the whole run. Instead, affected chunks are recorded to the dead-letter
+        queue (replayable via corpus/replay_dead_letter.py) and the run
+        continues with the successfully embedded chunks."""
+        paired: list[dict] = []
+        for i, chunk in enumerate(chunks):
+            if i < len(dense) and i < len(sparse) and dense[i] and sparse[i]:
+                chunk["dense_vector"] = dense[i]
+                chunk["sparse_vector"] = sparse[i]
+                paired.append(chunk)
+            else:
+                state_mgr.record_failure(
+                    chunk["chunk_id"], chunk["chunk_id"],
+                    "embedding batch returned fewer vectors than chunks",
+                    chunk["text"], namespace_label,
+                )
+        skipped = len(chunks) - len(paired)
+        if skipped:
+            logger.warning(
+                "Embedding misalignment: %d/%d chunks skipped (recorded to DLQ) for %s",
+                skipped, len(chunks), namespace_label,
+            )
+        return paired
+
     texts = [chunk["text"] for chunk in all_chunks]
     dense_vectors = []
     sparse_vectors = []
@@ -576,9 +604,7 @@ async def ingest_services_rag(
         dense_vectors.extend(d_batch)
         sparse_vectors.extend(s_batch)
 
-    for i, chunk in enumerate(all_chunks):
-        chunk["dense_vector"] = dense_vectors[i]
-        chunk["sparse_vector"] = sparse_vectors[i]
+    all_chunks = _align_vectors(all_chunks, dense_vectors, sparse_vectors, services_ns)
 
     for i in range(0, len(all_chunks), batch_size):
         batch = all_chunks[i : i + batch_size]
@@ -600,9 +626,7 @@ async def ingest_services_rag(
             b_texts = ns_texts[i : i + embed_batch]
             ns_dense.extend(await embedding_engine.embed_texts(b_texts))
             ns_sparse.extend(await embedding_engine.embed_sparse(b_texts))
-        for i, chunk in enumerate(ns_chunks):
-            chunk["dense_vector"] = ns_dense[i]
-            chunk["sparse_vector"] = ns_sparse[i]
+        ns_chunks = _align_vectors(ns_chunks, ns_dense, ns_sparse, target_ns)
 
         for i in range(0, len(ns_chunks), batch_size):
             batch = ns_chunks[i : i + batch_size]

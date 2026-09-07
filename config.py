@@ -1181,6 +1181,28 @@ class Settings(BaseSettings):
         description="Timeout in seconds for external web search queries",
     )
 
+    # ── IaC Validation & Repair Loop ────────────────────────────────────
+    iac_validation_enabled: bool = Field(
+        default=True,
+        description="Validate generated IaC artifacts (terraform/tflint/checkov/cfn-lint/kubeconform) after generation",
+    )
+    iac_validator_timeout_seconds: float = Field(
+        default=120.0,
+        ge=5.0,
+        le=600.0,
+        description="Per-artifact timeout for the layered IaC validator stack",
+    )
+    iac_terraform_init_enabled: bool = Field(
+        default=False,
+        description="Allow terraform init during validation (requires network/plugin cache; off by default)",
+    )
+    iac_max_repair_iterations: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum validate-and-repair iterations for the highest tier (research ceiling is 10; tier policies cap lower)",
+    )
+
     # ── Cloud Provider Credentials ──────────────────────────────────────
     # AWS
     aws_access_key_id: str | None = Field(default=None, description="AWS Access Key ID")
