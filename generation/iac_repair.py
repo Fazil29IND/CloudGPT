@@ -14,13 +14,14 @@ reported honestly to the caller.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Awaitable, Callable
+
+import structlog
 
 from api.artifacts import extract_artifacts_from_text
 from tools.iac_validator import detect_artifact_type, validate_artifact
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _IAC_TYPES = {"terraform", "cloudformation", "kubernetes"}
 

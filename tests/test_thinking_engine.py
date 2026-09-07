@@ -597,7 +597,7 @@ def test_knowledge_corpus_chunks_carry_senior_metadata():
         assert chunks, f"namespace {namespace} produced no chunks"
         for chunk in chunks:
             assert chunk["metadata"]["difficulty_tier"] == "senior"
-            assert chunk["metadata"]["domain"] in ("architecture", "troubleshooting", "iac", "finops", "cli")
+            assert chunk["metadata"]["domain"] in ("architecture", "troubleshooting", "iac", "finops", "cli", "security")
             assert chunk["chunk_id"].startswith("kb-")
 
 
