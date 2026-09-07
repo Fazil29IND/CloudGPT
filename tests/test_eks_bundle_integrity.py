@@ -17,14 +17,10 @@ Tests all 12 reviewer findings:
 
 from __future__ import annotations
 
-import pytest
-
 from tools.iac_validator import (
     check_static_rego_rules,
     check_static_terraform_rules,
     check_static_k8s_rules,
-    detect_artifact_type,
-    validate_artifact,
     validate_bundle,
 )
 from generation.validator import check_prose_code_alignment

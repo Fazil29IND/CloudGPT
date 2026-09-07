@@ -381,12 +381,12 @@ def validate_artifact(content: str, artifact_type: str | None = None, timeout_se
             layers.append(check_static_k8s_rules(content))
 
     tool_layers = [
-        l for l in layers
-        if not l.name.endswith(("-guardrails", "-compliance"))
+        lyr for lyr in layers
+        if not lyr.name.endswith(("-guardrails", "-compliance"))
     ]
-    tool_executed = [l for l in tool_layers if l.status in ("passed", "failed")]
-    executed = [l for l in layers if l.status in ("passed", "failed")]
-    valid = bool(tool_executed) and all(l.status == "passed" for l in executed)
+    tool_executed = [lyr for lyr in tool_layers if lyr.status in ("passed", "failed")]
+    executed = [lyr for lyr in layers if lyr.status in ("passed", "failed")]
+    valid = bool(tool_executed) and all(lyr.status == "passed" for lyr in executed)
     return IacValidationResult(
         artifact_type=kind,
         valid=valid,
