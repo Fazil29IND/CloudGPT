@@ -16,7 +16,7 @@ GOOD_TERRAFORM = '<cloudgpt_artifact filename="main.tf" title="VPC">resource "aw
 def _result(valid: bool) -> IacValidationResult:
     layer = LayerResult(name="terraform-fmt", status="passed" if valid else "failed")
     if not valid:
-        layer.findings = [iac_repair.Finding(code="fmt", message="misaligned indentation")]
+        layer.findings = [Finding(code="fmt", message="misaligned indentation")]
     return IacValidationResult(artifact_type="terraform", valid=valid, layers=[layer])
 
 
