@@ -409,7 +409,7 @@ def validate_bundle(artifacts: list[dict[str, Any]], timeout_seconds: float | No
 
     for art in artifacts:
         fn = (art.get("filename") or art.get("file") or "main.tf").strip()
-        cnt = (art.get("content") or "").strip()
+        cnt = textwrap.dedent(art.get("content") or "").strip()
         kind = str(art.get("artifact_type") or art.get("type") or art.get("_kind") or "").lower()
         if not kind or kind in ("iac", "script", "policy"):
             kind = detect_artifact_type(cnt, fn)
@@ -431,7 +431,7 @@ def validate_bundle(artifacts: list[dict[str, Any]], timeout_seconds: float | No
         for fn, cnt in {**tf_files, **rego_files, **k8s_files, **cfn_files, **doc_files}.items():
             dest = workdir / fn
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(textwrap.dedent(cnt).strip() + "\n", encoding="utf-8")
+            dest.write_text(cnt + "\n", encoding="utf-8")
 
         # 1. Terraform layers across the directory
         if tf_files:
