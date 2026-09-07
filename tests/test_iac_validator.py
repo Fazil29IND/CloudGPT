@@ -8,7 +8,6 @@ real binaries when present (skipped silently otherwise).
 from __future__ import annotations
 
 import subprocess
-from types import SimpleNamespace
 
 import pytest
 

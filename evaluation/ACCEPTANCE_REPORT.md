@@ -1,6 +1,6 @@
 # CloudGPT RAG & Cache Architecture — Acceptance Report
 
-**Date:** 2026-09-06 22:13:41Z  
+**Date:** 2026-09-07 17:14:09Z  
 **Active Corpus Version:** `v2`  
 **Cache Schema:** `rag:v2:*` (3-Layer Versioned)  
 **Embedding Model:** `text-embedding-004` (Dimension: 768)  
@@ -14,7 +14,7 @@
 
 ---
 
-## 1. Verification Gates — 10/10 passed
+## 1. Verification Gates — 13/13 passed
 
 | Gate / Component | Status | Verification Criteria |
 | :--- | :--- | :--- |
@@ -28,6 +28,9 @@
 | 30-Question Golden Evaluation Set | ✅ **PASSED** | Labeled questions across exact, conceptual, troubleshooting, and IaC |
 | model_version_config | ✅ **PASSED** | Automated check |
 | model_eval_importable | ✅ **PASSED** | Automated check |
+| iac_validator_tool | ✅ **PASSED** | Automated check |
+| iac_repair_loop | ✅ **PASSED** | Automated check |
+| implementation_golden_set | ✅ **PASSED** | Automated check |
 
 ---
 

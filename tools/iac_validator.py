@@ -99,7 +99,7 @@ class IacValidationResult:
             "artifact_type": self.artifact_type,
             "valid": self.valid,
             "duration_ms": round(self.duration_ms, 1),
-            "layers": [l.to_dict() for l in self.layers],
+            "layers": [layer.to_dict() for layer in self.layers],
         }
 
 
@@ -260,8 +260,8 @@ def validate_artifact(content: str, artifact_type: str | None = None, timeout_se
             ))
             layers.append(_run_layer("kubeconform", ["kubeconform", "-strict", str(artifact_path)], workdir, timeout, _parse_generic_lines))
 
-    executed = [l for l in layers if l.status in ("passed", "failed")]
-    valid = bool(executed) and all(l.status == "passed" for l in executed)
+    executed = [layer for layer in layers if layer.status in ("passed", "failed")]
+    valid = bool(executed) and all(layer.status == "passed" for layer in executed)
     return IacValidationResult(
         artifact_type=kind,
         valid=valid,

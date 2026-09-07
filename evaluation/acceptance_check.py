@@ -259,7 +259,7 @@ async def run_acceptance_checks() -> dict[str, bool]:
         results["model_version_config"] = False
 
     # 10. Model Evaluation Slice Check
-    print("[10/10] Verifying model-capability evaluation slice...")
+    print("[10/13] Verifying model-capability evaluation slice...")
     try:
         ok, msg = check_model_eval_importable()
         assert ok, msg
@@ -267,6 +267,65 @@ async def run_acceptance_checks() -> dict[str, bool]:
     except Exception as e:
         print(f"  FAILED: {e}")
         results["model_eval_importable"] = False
+
+    # 11. Layered IaC Validator Tool Check
+    print("[11/13] Verifying layered IaC validator (detection, honest skips, aggregation)...")
+    try:
+        from tools.iac_validator import IacValidationResult, detect_artifact_type, validate_artifact
+
+        assert detect_artifact_type('resource "aws_s3_bucket" "x" {}') == "terraform"
+        assert detect_artifact_type('{"AWSTemplateFormatVersion": "2010-09-09", "Resources": {}}') == "cloudformation"
+        assert detect_artifact_type("apiVersion: apps/v1\nkind: Deployment") == "kubernetes"
+        # Consistency contract: validity must equal "every executed layer passed";
+        # layers for missing binaries report skipped — never a fabricated pass or fail.
+        result = validate_artifact('resource "aws_s3_bucket" "x" {}')
+        assert isinstance(result, IacValidationResult)
+        executed = [l for l in result.layers if l.status in ("passed", "failed")]
+        expected_valid = bool(executed) and all(l.status == "passed" for l in executed)
+        assert result.valid == expected_valid, (
+            f"valid={result.valid} but executed layers say {expected_valid}"
+        )
+        assert all(l.status == "skipped" for l in result.layers if l.status not in ("passed", "failed"))
+        results["iac_validator_tool"] = True
+    except Exception as e:
+        print(f"  FAILED: {e}")
+        results["iac_validator_tool"] = False
+
+    # 12. Validate-and-Repair Loop Tier Caps Check
+    print("[12/13] Verifying tier-capped validate-and-repair loop...")
+    try:
+        from generation.iac_repair import _tier_repair_budget
+
+        s = get_settings()
+        assert hasattr(s, "iac_validation_enabled"), "Missing iac_validation_enabled"
+        assert hasattr(s, "iac_max_repair_iterations"), "Missing iac_max_repair_iterations"
+        assert _tier_repair_budget("Apex", s) == int(getattr(s, "iac_max_repair_iterations", 3))
+        assert _tier_repair_budget("Core", s) == min(2, int(getattr(s, "iac_max_repair_iterations", 3)))
+        assert _tier_repair_budget("Lite", s) == 0, "Lite must never run the repair loop (speed contract)"
+        assert _tier_repair_budget("Free", s) == 0
+        results["iac_repair_loop"] = True
+    except Exception as e:
+        print(f"  FAILED: {e}")
+        results["iac_repair_loop"] = False
+
+    # 13. Implementation Golden Set Check
+    print("[13/13] Verifying implementation golden evaluation set...")
+    try:
+        impl_file = BASE_DIR / "evaluation" / "implementation_golden_set.json"
+        assert impl_file.exists(), "implementation_golden_set.json not found"
+        with open(impl_file, "r", encoding="utf-8") as f:
+            tasks = json.load(f)
+        assert len(tasks) >= 20, f"Expected at least 20 implementation tasks, found {len(tasks)}"
+        required = {"id", "tier_target", "provider", "task", "artifact_type", "required_properties"}
+        for t in tasks:
+            missing = required - set(t.keys())
+            assert not missing, f"Task {t.get('id', '?')} missing fields: {missing}"
+        tiers = {t["tier_target"] for t in tasks}
+        assert {"Apex", "Core", "Lite"} <= tiers, "Golden set must cover all three tiers"
+        results["implementation_golden_set"] = True
+    except Exception as e:
+        print(f"  FAILED: {e}")
+        results["implementation_golden_set"] = False
 
     return results
 

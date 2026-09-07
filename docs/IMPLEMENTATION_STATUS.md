@@ -44,6 +44,11 @@ exercise the real logic, not a mock of the thing being claimed.
 | Email / ARQ / uploads / admin | **Tested** | Real logic, hermetic tests |
 | generation/ two-tier validation | **Tested** | Tier-aware policy (no more Free hardcode); Apex retry/abstention reachable via Agentic/Adaptive routes |
 | Thinking engine (Low→Max) | **Tested** | Defaults: Apex=Max, Core=High, Lite=Low; entitlements clamp escalation; provider-reported thinking tokens captured |
+| Layered IaC validator (`tools/iac_validator.py`) | **Tested** | terraform fmt/validate → tflint → checkov → cfn-lint → kubeconform; binaries optional — missing = `skipped`, never fabricated pass; real-binary path opt-in |
+| Validate-and-repair loop (`generation/iac_repair.py`) | **Tested** | IaCGen-pattern bounded loop, tier-capped (Apex=3, Core=2, Lite=0); full stack re-runs each iteration; budget exhaustion keeps original answer + reports unresolved findings honestly |
+| Implementation knowledge packs (module catalog, runbooks, postmortems, hardening, migration, CI/CD) | **Tested (chunked)** | 6 packs ≈ 446 chunks confirmed chunked into senior-engineer/troubleshooting/iac-templates namespaces; embedding upsert DLQ'd pending Gemini free-tier quota reset — replay with `python ingest_services.py` (idempotent) or `python corpus/replay_dead_letter.py` |
+| Official architecture manifest | **Tested (link-verified)** | 157 entries (90 original + 67 verified additions: WAF pillars, Architecture Centers, CAF, AVM, module READMEs); `sources/expand_manifest.py` link-checks and prunes dead URLs |
+| Implementation golden set + eval | **Tested (gates)** | 31 tier-tagged tasks; gate 13 validates structure/coverage; `evaluation/implementation_eval.py` measures real deployability (LIVE_API_TESTS gate) |
 
 ## Gaps deliberately NOT fixed (documented, not hidden)
 
