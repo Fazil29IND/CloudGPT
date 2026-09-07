@@ -1316,6 +1316,66 @@ def _build_pipeline_messages(
     return messages
 
 
+async def _maybe_run_iac_repair(
+    result: PipelineResult,
+    query: str,
+    messages: list[dict[str, Any]],
+    tier: str,
+    thinking_level: str | None,
+    emit_event: Any | None,
+) -> None:
+    """Bounded validate-and-repair loop for generated IaC artifacts.
+
+    Runs post-generation: artifacts are validated with the layered toolchain;
+    if the tier's repair budget allows and validation failed, findings are fed
+    back for a bounded regeneration. The repaired answer replaces the stored
+    result (what gets cached/served), and metadata rides result.validation.
+    In stream mode only additive SSE events are emitted — the event contract
+    is never changed."""
+    try:
+        from generation.iac_repair import run_iac_repair_loop
+
+        async def _regenerate(repair_messages: list[dict[str, Any]], _thinking: str | None) -> str:
+            usage_out: dict[str, Any] = {}
+            answer, _model = await generate_with_fallback(
+                messages=repair_messages,
+                stream=False,
+                tier=tier,
+                thinking_level=thinking_level,
+                usage_out=usage_out,
+            )
+            return sanitize_model_output(answer)
+
+        meta = await run_iac_repair_loop(
+            query=query,
+            prior_answer=result.answer,
+            base_messages=messages,
+            generate_fn=_regenerate,
+            tier=tier,
+            settings=pipeline.settings,
+            emit_event=emit_event,
+        )
+        if not meta.get("repair_attempted"):
+            if meta.get("valid") is not None:
+                result.validation = {**(result.validation or {}), "iac_validation": {
+                    "valid": meta["valid"], "artifacts": meta["artifact_count"], "repaired": False}}
+            return
+
+        changed = bool(meta.get("final_answer")) and meta["final_answer"] != result.answer
+        if meta.get("final_answer") and changed:
+            result.answer = meta["final_answer"]
+        result.validation = {**(result.validation or {}), "iac_validation": {
+            "valid": meta.get("valid"),
+            "iterations": meta.get("iterations", 0),
+            "artifacts": meta.get("artifact_count", 0),
+            "repaired": changed,
+            "unresolved_findings": meta.get("unresolved_findings", []),
+        }}
+        result.context_validator_flags.append(f"iac_repair_iterations:{meta.get('iterations', 0)}")
+    except Exception as e:
+        logger.warning("iac_repair.loop_error", error=str(e))
+
+
 async def execute_agent_pipeline(
     query: str,
     provider_filter: str | None = None,
@@ -1704,6 +1764,7 @@ async def execute_agent_pipeline(
             try:
                 from generation.validator import apply_lite_validation
                 apply_lite_validation(result, query, rag_results, citation_mgr, pipeline.settings, tier=tier)
+                await _maybe_run_iac_repair(result, query, messages, tier, thinking_level, emit_event)
             except Exception as e:
                 logger.warning("lite_validation.stream_wiring_error", error=str(e))
             _has_attachments = bool(attachment_texts)
@@ -1756,6 +1817,7 @@ async def execute_agent_pipeline(
     try:
         from generation.validator import apply_lite_validation
         apply_lite_validation(result, query, rag_results, citation_mgr, pipeline.settings, tier=tier)
+        await _maybe_run_iac_repair(result, query, messages, tier, thinking_level, emit_event=None)
     except Exception as e:
         logger.warning("lite_validation.wiring_error", error=str(e))
 
