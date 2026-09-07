@@ -69,6 +69,48 @@ KNOWLEDGE_FILES: list[dict[str, Any]] = [
         "document_type": "cli_cheatsheet",
         "title": "Cloud CLI Cheat Sheets (AWS CLI, gcloud, az)",
     },
+    {
+        "filename": "module_catalog.md",
+        "namespace_base": "iac-templates",
+        "domain": "iac",
+        "document_type": "module_catalog",
+        "title": "Verified Module Catalog (terraform-aws-modules, Azure AVM, Google modules) — Usage Recipes & Gotchas",
+    },
+    {
+        "filename": "implementation_runbooks.md",
+        "namespace_base": "senior-engineer-knowledge",
+        "domain": "architecture",
+        "document_type": "implementation_runbook",
+        "title": "Implementation Runbooks (Provision → Verify → Operate per Service Family)",
+    },
+    {
+        "filename": "postmortems.md",
+        "namespace_base": "troubleshooting-playbooks",
+        "domain": "troubleshooting",
+        "document_type": "postmortem",
+        "title": "Failure-Class Postmortems (Quota, State Corruption, Lockout, DNS, KMS, Drift, Egress, Regional)",
+    },
+    {
+        "filename": "security_hardening.md",
+        "namespace_base": "senior-engineer-knowledge",
+        "domain": "security",
+        "document_type": "security_hardening",
+        "title": "Security Hardening Aligned to IaC Scanners (Checkov Rule Classes → Correct Fixes)",
+    },
+    {
+        "filename": "migration_and_cutover.md",
+        "namespace_base": "senior-engineer-knowledge",
+        "domain": "architecture",
+        "document_type": "migration_playbook",
+        "title": "Migration & Cutover Playbooks (DB Cutover, Blue/Green, Canary, Storage, Landing Zones)",
+    },
+    {
+        "filename": "platform_cicd.md",
+        "namespace_base": "senior-engineer-knowledge",
+        "domain": "architecture",
+        "document_type": "platform_cicd",
+        "title": "Platform & CI/CD for Infrastructure (OIDC, Plan/Apply Separation, Drift, Test Pyramid)",
+    },
 ]
 
 
