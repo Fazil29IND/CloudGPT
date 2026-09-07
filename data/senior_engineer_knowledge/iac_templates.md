@@ -19,7 +19,19 @@ environments/
 ```
 State: S3 backend with DynamoDB lock table, bucket versioning ON, state
 encryption with KMS CMK. One state per environment per component (blast-radius
-isolation). Never share state between prod and non-prod.
+isolation). Never share state between prod and non-prod:
+```hcl
+terraform {
+  required_version = ">= 1.5.0"
+  backend "s3" {
+    bucket         = "corp-terraform-state-us-east-1"
+    key            = "platform/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "corp-terraform-locks"
+    encrypt        = true
+  }
+}
+```
 
 ### Network Module Skeleton
 ```hcl
@@ -76,15 +88,37 @@ resource "aws_db_instance" "app" {
 module "eks" {
   source          = "terraform-aws-modules/eks/aws"
   cluster_name    = "${var.env}-cluster"
-  cluster_version = "1.31"
+  cluster_version = var.kubernetes_version # e.g. "1.31"
   vpc_id          = module.network.vpc_id
   subnet_ids      = module.network.private_subnet_ids
 
-  cluster_endpoint_public_access       = true
-  cluster_endpoint_public_access_cidrs = var.admin_cidrs
+  cluster_endpoint_public_access       = false
+  cluster_endpoint_private_access      = true
   cluster_encryption_config            = { resources = ["secrets"] }
 
   enable_irsa = true   # IAM Roles for Service Accounts — required by Karpenter
+
+  eks_managed_node_groups = {
+    default = {
+      instance_types = ["m6i.large"]
+      min_size       = 2
+      max_size       = 6
+      desired_size   = 3
+    }
+  }
+}
+
+# Alternatively with native Terraform resources:
+# aws_eks_cluster MUST be paired with aws_eks_node_group + 3 node IAM policies:
+# 1. AmazonEKSWorkerNodePolicy, 2. AmazonEKS_CNI_Policy, 3. AmazonEC2ContainerRegistryReadOnly
+resource "aws_eks_node_group" "app" {
+  cluster_name    = aws_eks_cluster.main.name
+  node_group_name = "${var.env}-ng"
+  node_role_arn   = aws_iam_role.node.arn
+  subnet_ids      = module.network.private_subnet_ids
+  version         = var.kubernetes_version
+  scaling_config  { desired_size = 3; max_size = 6; min_size = 2 }
+  instance_types  = ["m6i.large"]
 }
 ```
 

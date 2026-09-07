@@ -19,11 +19,11 @@ from typing import Any, Awaitable, Callable
 import structlog
 
 from api.artifacts import extract_artifacts_from_text
-from tools.iac_validator import detect_artifact_type, validate_artifact
+from tools.iac_validator import detect_artifact_type, validate_artifact, validate_bundle
 
 logger = structlog.get_logger(__name__)
 
-_IAC_TYPES = {"terraform", "cloudformation", "kubernetes"}
+_IAC_TYPES = {"terraform", "cloudformation", "kubernetes", "rego", "policy"}
 
 
 def _tier_repair_budget(tier: str, settings: Any) -> int:
@@ -42,11 +42,25 @@ def _extract_iac_artifacts(answer: str) -> list[dict[str, Any]]:
     artifacts = []
     for art in extract_artifacts_from_text(answer or ""):
         content = art.get("content") or ""
+        fn = (art.get("filename") or art.get("file") or "").strip()
         declared_type = str(art.get("artifact_type") or art.get("type") or "").lower()
-        kind = declared_type if declared_type in _IAC_TYPES else detect_artifact_type(content)
-        if kind in _IAC_TYPES and content.strip():
-            artifacts.append({**art, "_kind": kind})
+        kind = declared_type if declared_type in _IAC_TYPES else detect_artifact_type(content, fn)
+        if (kind in _IAC_TYPES or fn.endswith((".tf", ".rego", ".yaml", ".yml", ".md"))) and content.strip():
+            artifacts.append({**art, "_kind": kind, "filename": fn or "main.tf"})
     return artifacts
+
+
+def _validate_artifacts(artifacts: list[dict[str, Any]], settings: Any) -> tuple[bool, list[str]]:
+    timeout = float(getattr(settings, "iac_validator_timeout_seconds", 120))
+    if len(artifacts) > 1:
+        res = validate_bundle(artifacts, timeout_seconds=timeout)
+        return res.valid, res.summary_lines()
+    elif len(artifacts) == 1:
+        first = artifacts[0]
+        res = validate_artifact(first["content"], first["_kind"], timeout_seconds=timeout)
+        fn = first.get("filename", "artifact")
+        return res.valid, [f"{fn}: {line}" for line in res.summary_lines()]
+    return False, ["No artifacts found"]
 
 
 def _repair_instruction(findings_lines: list[str], iteration: int, budget: int) -> str:
@@ -100,12 +114,8 @@ async def run_iac_repair_loop(
     budget = _tier_repair_budget(tier, settings)
     if budget <= 0:
         # Lite: deterministic validation only, no repair loop.
-        first = artifacts[0]
-        result = validate_artifact(
-            first["content"], first["_kind"],
-            timeout_seconds=float(getattr(settings, "iac_validator_timeout_seconds", 120)),
-        )
-        meta["valid"] = result.valid
+        valid, _ = _validate_artifacts(artifacts, settings)
+        meta["valid"] = valid
         return meta
 
     if emit_event is not None:
@@ -119,17 +129,9 @@ async def run_iac_repair_loop(
 
     for iteration in range(1, budget + 1):
         # Full stack re-runs every iteration (regression guard)
-        results = [
-            validate_artifact(art["content"], art["_kind"],
-                              timeout_seconds=float(getattr(settings, "iac_validator_timeout_seconds", 120)))
-            for art in artifacts
-        ]
-        findings_lines: list[str] = []
-        for art, res in zip(artifacts, results):
-            for line in res.summary_lines():
-                findings_lines.append(f"{art.get('filename', 'artifact')}: {line}")
+        all_valid, findings_lines = _validate_artifacts(artifacts, settings)
 
-        if all(r.valid for r in results):
+        if all_valid:
             meta.update({
                 "repair_attempted": iteration > 1,
                 "iterations": iteration - 1,
@@ -169,12 +171,7 @@ async def run_iac_repair_loop(
             break
 
     # Budget exhausted: final validation pass for honest reporting.
-    results = [
-        validate_artifact(art["content"], art["_kind"],
-                          timeout_seconds=float(getattr(settings, "iac_validator_timeout_seconds", 120)))
-        for art in artifacts
-    ]
-    valid = bool(results) and all(r.valid for r in results)
+    valid, last_findings = _validate_artifacts(artifacts, settings)
     meta.update({
         "iterations": budget,
         "valid": valid,

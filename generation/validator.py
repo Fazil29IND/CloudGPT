@@ -183,6 +183,45 @@ def _format_check(answer: str, profile: str) -> DimensionResult:
     )
 
 
+def check_prose_code_alignment(answer: str) -> DimensionResult:
+    """Validate that capabilities described in prose are either backed by code artifacts or explicitly marked as target-state roadmap."""
+    answer_lower = (answer or "").lower()
+    issues: list[str] = []
+
+    # 1. Service mesh claims (Istio, Linkerd, SPIFFE/SPIRE)
+    if any(mesh_kw in answer_lower for mesh_kw in ("service mesh", "istio", "spiffe", "spire")):
+        has_mesh_code = bool(re.search(r'\b(?:apiVersion:\s*install\.istio\.io|kind:\s*EnvoyFilter|apiVersion:\s*networking\.istio\.io)\b', answer))
+        has_roadmap = any(kw in answer_lower for kw in ("target-state", "roadmap", "phased delivery", "future phase", "not delivered"))
+        if not has_mesh_code and not has_roadmap:
+            issues.append("prose claims service mesh capability without delivering mesh manifests or qualifying under Target-State Roadmap")
+
+    # 2. Multi-region active-active claims
+    if any(mr_kw in answer_lower for mr_kw in ("active-active multi-region", "multi-region disaster recovery")):
+        has_multi_region_code = bool(re.search(r'aws_route53_record|google_compute_global_forwarding_rule|azurerm_traffic_manager', answer))
+        has_roadmap = any(kw in answer_lower for kw in ("target-state", "roadmap", "phased delivery", "future phase", "not delivered", "single-region"))
+        if not has_multi_region_code and not has_roadmap:
+            issues.append("prose claims active-active multi-region without secondary-region resources or Target-State Roadmap qualification")
+
+    # 3. HorizontalPodAutoscaler claims
+    if any(hpa_kw in answer_lower for hpa_kw in ("horizontalpodautoscaler", "horizontal pod autoscal")):
+        has_hpa_manifest = "kind: HorizontalPodAutoscaler" in answer or "kind: horizontalpodautoscaler" in answer_lower
+        has_roadmap = any(kw in answer_lower for kw in ("target-state", "roadmap", "phased", "not delivered"))
+        if not has_hpa_manifest and not has_roadmap:
+            issues.append("prose claims HPA autoscaling without delivering k8s/hpa.yaml manifest")
+
+    # 4. PCI-DSS compliance tags without controls
+    if 'compliance = "pci-dss-v4"' in answer_lower or 'compliance = "pci-dss"' in answer_lower:
+        has_kms = "enable_key_rotation" in answer
+        has_private = "endpoint_private_access" in answer or "private_endpoint" in answer_lower
+        if not (has_kms and has_private):
+            issues.append("contains 'Compliance = PCI-DSS-v4' tag without full audit baseline (KMS CMK rotation and private endpoints)")
+
+    passed = len(issues) == 0
+    score = 1.0 if passed else 0.5
+    detail = "; ".join(issues) if issues else "prose-to-code alignment verified"
+    return DimensionResult("alignment", passed, score, detail)
+
+
 def validate_output(
     answer: str,
     query: str,
@@ -191,7 +230,7 @@ def validate_output(
     policy: ValidationPolicy,
     chunk_to_source: Any | None = None,
 ) -> OutputValidationReport:
-    """Run the five-dimensional validation over a generated answer."""
+    """Run the multi-dimensional validation over a generated answer."""
     report = OutputValidationReport()
 
     # 1. Grounding — deterministic claim-level entailment.
@@ -249,6 +288,9 @@ def validate_output(
         "safety", not safety_hits, 1.0 if not safety_hits else 0.0,
         "injection markers echoed" if safety_hits else "clean",
     )
+
+    # 6. Alignment — Prose-to-Code Alignment Guardrail (Item 12)
+    report.dimensions["alignment"] = check_prose_code_alignment(answer)
 
     report.is_valid = all(d.passed for d in report.dimensions.values())
     for name, dim in report.dimensions.items():
@@ -331,6 +373,8 @@ def build_retry_messages(
         findings.append(f"CITATION DEFECTS: {report.dimensions['citations'].details}")
     if not report.dimensions["safety"].passed:
         findings.append(f"SAFETY DEFECTS: {report.dimensions['safety'].details}")
+    if "alignment" in report.dimensions and not report.dimensions["alignment"].passed:
+        findings.append(f"PROSE-TO-CODE ALIGNMENT DEFECTS: {report.dimensions['alignment'].details}")
     if not findings:
         findings.append("General grounding improvement required.")
 

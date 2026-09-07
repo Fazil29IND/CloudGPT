@@ -72,6 +72,18 @@ def build_policy_digest(
         else ("standard answer" if complexity_score >= 0.4 else "concise direct answer")
     )
 
+    bundle_policy = (
+        "IaC Bundle Policy: Multi-file bundles MUST deliver complete data plane compute "
+        "(aws_eks_node_group with node IAM role and 3 attached policies), parameterized "
+        "Kubernetes version (variable 'kubernetes_version' default '1.31', never <=1.29), "
+        "OPA Rego with 'import rego.v1', explicit security groups (no 0.0.0.0/0), S3 remote "
+        "backend with DynamoDB locking, scoped deployment IAM role in README, and k8s/hpa.yaml "
+        "whenever autoscaling is mentioned. Never describe multi-cloud, multi-region, or "
+        "service-mesh capabilities in prose unless corresponding executable resources exist in "
+        "the bundle; isolate all non-delivered capabilities under 'Target-State Architecture & "
+        "Cross-Cloud / Multi-Region Roadmap'."
+    )
+
     digest = "\n".join(
         [
             "<pipeline_policy>",
@@ -84,6 +96,7 @@ def build_policy_digest(
                 "Validation policy: answers are claim-checked against evidence after generation; "
                 "unsupported specific values, flags, quotas, or prices will trigger revision."
             ),
+            bundle_policy,
             "</pipeline_policy>",
         ]
     )

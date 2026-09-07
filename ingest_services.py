@@ -111,6 +111,13 @@ KNOWLEDGE_FILES: list[dict[str, Any]] = [
         "document_type": "platform_cicd",
         "title": "Platform & CI/CD for Infrastructure (OIDC, Plan/Apply Separation, Drift, Test Pyramid)",
     },
+    {
+        "filename": "eks_enterprise_bundle.md",
+        "namespace_base": "iac-templates",
+        "domain": "iac",
+        "document_type": "eks_enterprise_bundle",
+        "title": "Enterprise EKS Reference Bundle (Compute Node Groups, Rego v1, HPA, Scoped IAM, Zero-Trust SGs)",
+    },
 ]
 
 

@@ -95,3 +95,54 @@ terraform validate
 ```
 Exceptions live in a `checkov.yml` with a linked ticket and expiry — scanner
 noise without an expiry is how real findings get ignored.
+
+## OPA Rego v1 Guardrails (Zero-Trust Standard)
+All Open Policy Agent rules must be written with `import rego.v1` and use modern `contains ... if` syntax:
+```rego
+package terraform.security
+
+import rego.v1
+
+default allow := false
+
+# Enforce all 4 S3 block public access flags
+deny contains msg if {
+    some resource in input.resource_changes
+    resource.type == "aws_s3_bucket_public_access_block"
+    v := resource.change.after
+    not (v.block_public_acls == true and v.block_public_policy == true and v.ignore_public_acls == true and v.restrict_public_buckets == true)
+    msg := sprintf("S3 bucket '%v' must enable all 4 public access block flags", [resource.address])
+}
+
+# Deny 0.0.0.0/0 ingress
+deny contains msg if {
+    some resource in input.resource_changes
+    resource.type == "aws_security_group"
+    some ingress in resource.change.after.ingress
+    some cidr in ingress.cidr_blocks
+    cidr == "0.0.0.0/0"
+    msg := sprintf("Security group '%v' must not permit 0.0.0.0/0 ingress", [resource.address])
+}
+
+# Deny IAM wildcard actions
+deny contains msg if {
+    some resource in input.resource_changes
+    resource.type == "aws_iam_policy"
+    doc := json.unmarshal(resource.change.after.policy)
+    some stmt in doc.Statement
+    stmt.Effect == "Allow"
+    stmt.Action == "*"
+    msg := sprintf("IAM policy '%v' must not allow wildcard '*' actions", [resource.address])
+}
+
+allow if count(deny) == 0
+```
+
+## Compliance Claim Governance (PCI-DSS v4)
+A `Compliance = "PCI-DSS-v4"` tag alone is NOT compliance. Never emit compliance tags unless backed by executable controls:
+1. Encryption: Customer-managed KMS key with automated rotation (`enable_key_rotation = true`).
+2. Network Isolation: Private VPC subnets, disabled or restricted EKS public API endpoint (`endpoint_private_access = true`), no `0.0.0.0/0` security group rules.
+3. Storage Security: Full S3 block public access on all buckets, server-side encryption via KMS CMK.
+4. Audit Trails: Multi-region AWS CloudTrail with log-file validation enabled and CloudWatch Logs delivery.
+5. Workload Hardening: Non-root execution (`runAsNonRoot: true`), read-only root filesystems, and dropped Linux capabilities.
+If these controls are not delivered in the bundle, omit compliance claims and use operational tags (`Environment`, `ManagedBy`, `Project`).
