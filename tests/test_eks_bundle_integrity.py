@@ -382,6 +382,7 @@ def test_complete_enterprise_bundle_passes():
               type    = string
               default = "1.31"
             }
+
             variable "vpc_id" {
               type = string
             }
@@ -395,6 +396,7 @@ def test_complete_enterprise_bundle_passes():
               role_arn = "arn:aws:iam::123456789012:role/cluster"
               version  = var.kubernetes_version
             }
+
             resource "aws_eks_node_group" "default" {
               cluster_name    = aws_eks_cluster.prod.name
               node_group_name = "default-ng"
@@ -402,6 +404,7 @@ def test_complete_enterprise_bundle_passes():
               subnet_ids      = ["subnet-1"]
               version         = var.kubernetes_version
             }
+
             # AmazonEKSWorkerNodePolicy
             # AmazonEKS_CNI_Policy
             # AmazonEC2ContainerRegistryReadOnly

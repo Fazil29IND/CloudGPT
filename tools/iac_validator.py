@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -143,12 +144,14 @@ def _run_layer(
         )
         findings = parse(proc.stdout, proc.stderr) if parse else []
         status = "passed" if proc.returncode == 0 else "failed"
+        out_msg = (proc.stderr or proc.stdout or "").strip()
+        detail = f"exit={proc.returncode}{': ' + out_msg[:200] if out_msg else ''}" if proc.returncode != 0 else ""
         return LayerResult(
             name=name,
             status=status,
             findings=findings,
             duration_ms=(time.perf_counter() - started) * 1000,
-            detail=f"exit={proc.returncode}",
+            detail=detail,
         )
     except subprocess.TimeoutExpired:
         return LayerResult(
@@ -329,10 +332,14 @@ def validate_artifact(content: str, artifact_type: str | None = None, timeout_se
             "policy": "policy.rego",
         }.get(kind, "main.tf")
         artifact_path = workdir / file_name
-        artifact_path.write_text(content, encoding="utf-8")
+        artifact_path.write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
 
         if kind == "terraform":
-            layers.append(_run_layer("terraform-fmt", ["terraform", "fmt", "-check", "-diff", str(artifact_path)], workdir, timeout))
+            fmt_cmd = ["terraform", "fmt", "-check"]
+            if _binary_available("diff"):
+                fmt_cmd.append("-diff")
+            fmt_cmd.append(str(artifact_path))
+            layers.append(_run_layer("terraform-fmt", fmt_cmd, workdir, timeout))
             # terraform validate needs init; skip when no provider cache is wired
             if _binary_available("terraform") and getattr(settings, "iac_terraform_init_enabled", False):
                 _run_layer("terraform-init", ["terraform", "init", "-backend=false", "-input=false"], workdir, timeout)
@@ -424,12 +431,16 @@ def validate_bundle(artifacts: list[dict[str, Any]], timeout_seconds: float | No
         for fn, cnt in {**tf_files, **rego_files, **k8s_files, **cfn_files, **doc_files}.items():
             dest = workdir / fn
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(cnt, encoding="utf-8")
+            dest.write_text(textwrap.dedent(cnt).strip() + "\n", encoding="utf-8")
 
         # 1. Terraform layers across the directory
         if tf_files:
             all_tf = "\n".join(tf_files.values())
-            layers.append(_run_layer("terraform-fmt", ["terraform", "fmt", "-check", "-diff", str(workdir)], workdir, timeout))
+            fmt_cmd = ["terraform", "fmt", "-check"]
+            if _binary_available("diff"):
+                fmt_cmd.append("-diff")
+            fmt_cmd.append(str(workdir))
+            layers.append(_run_layer("terraform-fmt", fmt_cmd, workdir, timeout))
             if _binary_available("terraform") and getattr(settings, "iac_terraform_init_enabled", False):
                 _run_layer("terraform-init", ["terraform", "init", "-backend=false", "-input=false"], workdir, timeout)
                 layers.append(_run_layer("terraform-validate", ["terraform", "validate"], workdir, timeout))
