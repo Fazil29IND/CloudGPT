@@ -128,6 +128,12 @@ async def run_iac_repair_loop(
     last_findings: list[str] = []
 
     for iteration in range(1, budget + 1):
+        if emit_event is not None:
+            try:
+                await emit_event({"stage": "validating_syntax", "label": "Validating IaC…", "status": "active"})
+            except Exception:
+                pass
+
         # Full stack re-runs every iteration (regression guard)
         all_valid, findings_lines = _validate_artifacts(artifacts, settings)
 
@@ -144,6 +150,10 @@ async def run_iac_repair_loop(
                         "status": "passed", "iterations": iteration - 1, "artifacts": len(artifacts)}})
                 except Exception:
                     pass
+                try:
+                    await emit_event({"stage": "validating_syntax", "label": "Validation complete", "status": "complete"})
+                except Exception:
+                    pass
             return meta
 
         last_findings = findings_lines
@@ -152,6 +162,14 @@ async def run_iac_repair_loop(
             try:
                 await emit_event({"iac_repair": {
                     "iteration": iteration, "budget": budget, "findings": len(findings_lines)}})
+            except Exception:
+                pass
+            try:
+                await emit_event({
+                    "stage": "applying_fixes",
+                    "label": f"Applying fixes (pass {iteration}/{budget})…",
+                    "status": "active",
+                })
             except Exception:
                 pass
         logger.info(
@@ -186,6 +204,10 @@ async def run_iac_repair_loop(
                 "iterations": budget, "artifacts": len(artifacts),
                 "repaired": bool(valid and current_answer != prior_answer),
             }})
+        except Exception:
+            pass
+        try:
+            await emit_event({"stage": "validating_syntax", "label": "Validation complete", "status": "complete"})
         except Exception:
             pass
     return meta

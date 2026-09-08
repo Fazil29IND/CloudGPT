@@ -296,6 +296,92 @@ def check_static_terraform_rules(content: str) -> LayerResult:
     return LayerResult(name="terraform-integrity-guardrails", status=status, findings=findings)
 
 
+def check_static_gcp_rules(content: str) -> LayerResult:
+    """Deterministic security and compliance guardrails for GCP Terraform."""
+    findings: list[Finding] = []
+
+    # 1. GKE Private Nodes Check:
+    if re.search(r'resource\s+"google_container_cluster"', content):
+        has_private_nodes = bool(re.search(r'enable_private_nodes\s*=\s*true', content))
+        if not has_private_nodes:
+            findings.append(Finding(
+                code="gke.public_nodes",
+                message="GKE cluster must enable private nodes (private_cluster_config.enable_private_nodes = true) to prevent public IP assignment to worker nodes.",
+                severity="high",
+            ))
+
+    # 2. GCS Bucket Public Access Prevention Check:
+    if re.search(r'resource\s+"google_storage_bucket"', content):
+        has_enforced_public_prevention = bool(re.search(r'public_access_prevention\s*=\s*"enforced"', content))
+        if not has_enforced_public_prevention:
+            findings.append(Finding(
+                code="gcs.missing_public_access_prevention",
+                message="GCS bucket must set public_access_prevention = 'enforced' to prevent accidental exposure.",
+                severity="high",
+            ))
+
+    # 3. Cloud SQL SSL Requirement Check:
+    if re.search(r'resource\s+"google_sql_database_instance"', content):
+        has_ssl = bool(
+            re.search(r'require_ssl\s*=\s*true', content)
+            or re.search(r'ssl_mode\s*=\s*"(?:ENCRYPTED_ONLY|TRUSTED_CLIENT_CERTIFICATE_REQUIRED)"', content)
+        )
+        if not has_ssl:
+            findings.append(Finding(
+                code="cloudsql.ssl_disabled",
+                message="Cloud SQL instance must enforce SSL (ip_configuration.require_ssl = true or ssl_mode = 'ENCRYPTED_ONLY').",
+                severity="high",
+            ))
+
+    status = "failed" if findings else "passed"
+    return LayerResult(name="gcp-integrity-guardrails", status=status, findings=findings)
+
+
+def check_static_azure_rules(content: str) -> LayerResult:
+    """Deterministic security and compliance guardrails for Azure Terraform."""
+    findings: list[Finding] = []
+
+    # 1. AKS Network Profile Check:
+    if re.search(r'resource\s+"azurerm_kubernetes_cluster"', content):
+        has_network_profile = bool(re.search(r'network_profile\s*\{', content))
+        if not has_network_profile:
+            findings.append(Finding(
+                code="aks.missing_network_profile",
+                message="AKS cluster must define network_profile for CNI / policy.",
+                severity="high",
+            ))
+
+    # 2. Azure Storage Account Public Access Check:
+    if re.search(r'resource\s+"azurerm_storage_account"', content):
+        is_public_true = bool(
+            re.search(r'allow_blob_public_access\s*=\s*true', content)
+            or re.search(r'allow_nested_items_to_be_public\s*=\s*true', content)
+        )
+        has_public_false = bool(
+            re.search(r'allow_blob_public_access\s*=\s*false', content)
+            or re.search(r'allow_nested_items_to_be_public\s*=\s*false', content)
+        )
+        if is_public_true or not has_public_false:
+            findings.append(Finding(
+                code="storage.public_blob",
+                message="Azure Storage Account must not permit public blob access (allow_blob_public_access = false or allow_nested_items_to_be_public = false).",
+                severity="high",
+            ))
+
+    # 3. Azure Key Vault Purge Protection Check:
+    if re.search(r'resource\s+"azurerm_key_vault"', content):
+        has_purge_protection = bool(re.search(r'purge_protection_enabled\s*=\s*true', content))
+        if not has_purge_protection:
+            findings.append(Finding(
+                code="keyvault.purge_protection",
+                message="Azure Key Vault must enable purge protection (purge_protection_enabled = true).",
+                severity="high",
+            ))
+
+    status = "failed" if findings else "passed"
+    return LayerResult(name="azure-integrity-guardrails", status=status, findings=findings)
+
+
 def check_static_k8s_rules(content: str) -> LayerResult:
     """Deterministic check for HPA and workload resource requests."""
     findings: list[Finding] = []
@@ -353,6 +439,10 @@ def validate_artifact(content: str, artifact_type: str | None = None, timeout_se
                 workdir, timeout, _parse_checkov,
             ))
             layers.append(check_static_terraform_rules(content))
+            if "google_" in content:
+                layers.append(check_static_gcp_rules(content))
+            if "azurerm_" in content:
+                layers.append(check_static_azure_rules(content))
         elif kind in ("rego", "policy"):
             layers.append(_run_layer(
                 "opa-check",
@@ -458,6 +548,10 @@ def validate_bundle(artifacts: list[dict[str, Any]], timeout_seconds: float | No
                 workdir, timeout, _parse_checkov,
             ))
             layers.append(check_static_terraform_rules(all_tf))
+            if "google_" in all_tf:
+                layers.append(check_static_gcp_rules(all_tf))
+            if "azurerm_" in all_tf:
+                layers.append(check_static_azure_rules(all_tf))
 
         # 2. Rego layers
         if rego_files:
