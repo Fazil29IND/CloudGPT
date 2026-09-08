@@ -82,6 +82,7 @@ class EmbeddingEngine:
         self.model = None
         self._is_gemini = False
         self._is_fastembed = False
+        self._is_voyage = False
         self._batch_size = 32
         self._semaphore = asyncio.Semaphore(10)
         self._bm25_retriever = None
@@ -147,9 +148,43 @@ class EmbeddingEngine:
             settings = get_settings()
             self.model = AsyncOpenAI(api_key=settings.openai_api_key)
         elif self.provider == 'voyage':
-            self.model = None
+            try:
+                import voyageai
+            except ImportError as e:
+                raise ImportError(
+                    "The voyageai package is required for Voyage embeddings. "
+                    "Install it via `pip install voyageai`."
+                ) from e
+            settings = get_settings()
+            api_key = getattr(settings, "voyage_api_key", None)
+            if not api_key:
+                raise ValueError("Voyage API key is missing. Set VOYAGE_API_KEY.")
+            self.model = voyageai.Client(api_key=api_key)
+            self._is_voyage = True
+            logger.info("Voyage AI embedding client loaded: model=%s (dim=%d)", self.model_name, self.dimension)
         else:
             raise ValueError(f"Unknown embedding provider: {self.provider}")
+
+    async def _call_voyage_embed(self, texts: list[str], input_type: str = "document") -> list[list[float]]:
+        """Execute Voyage embedding call via voyageai client."""
+        if not texts or self.model is None:
+            return []
+        embeddings: list[list[float]] = []
+        for i in range(0, len(texts), self._batch_size):
+            batch = texts[i : i + self._batch_size]
+            kwargs: dict[str, Any] = {
+                "texts": batch,
+                "model": self.model_name,
+                "input_type": input_type,
+            }
+            if self.dimension and self.dimension != 1024:
+                kwargs["output_dimension"] = self.dimension
+            res = await asyncio.to_thread(self.model.embed, **kwargs)
+            if hasattr(res, "embeddings"):
+                embeddings.extend(res.embeddings)
+            elif isinstance(res, list):
+                embeddings.extend(res)
+        return embeddings
 
     async def _call_gemini_embed(self, contents: Any, task_type: str) -> list[list[float]]:
         """Execute Gemini embedding call with rate limit retry, exponential backoff, model fallback, and cooldown."""
@@ -250,12 +285,17 @@ class EmbeddingEngine:
                 model=self.model_name
             )
             return [data.embedding for data in response.data]
+        elif self.provider == 'voyage':
+            return await self._call_voyage_embed(texts, input_type="document")
         return []
 
     async def embed_query(self, query: str) -> list[float]:
         self._load_model()
         if self.provider in ('gemini', 'google') and self._is_gemini:
             vecs = await self._call_gemini_embed(query, task_type="RETRIEVAL_QUERY")
+            return vecs[0] if vecs else []
+        if self.provider == 'voyage':
+            vecs = await self._call_voyage_embed([query], input_type="query")
             return vecs[0] if vecs else []
 
         prefix = "search_query: " if "bge" in self.model_name.lower() else ""
@@ -267,6 +307,9 @@ class EmbeddingEngine:
         self._load_model()
         if self.provider in ('gemini', 'google') and self._is_gemini:
             vecs = await self._call_gemini_embed(text, task_type="SEMANTIC_SIMILARITY")
+            return vecs[0] if vecs else []
+        if self.provider == 'voyage':
+            vecs = await self._call_voyage_embed([text], input_type="query")
             return vecs[0] if vecs else []
         return await self.embed_query(text)
 
