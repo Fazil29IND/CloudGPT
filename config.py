@@ -278,8 +278,8 @@ class Settings(BaseSettings):
         description="Max-tier primary model — thinking level: High",
     )
     enable_tier_model_specialization: bool = Field(
-        default=False,
-        description="When true, dynamically specializes model tiers: Flash-Lite for Free, Flash-2.5 for Pro, Pro-2.5 for Apex",
+        default=True,
+        description="Dynamically specializes models by tier: gemini-2.0-flash-lite for Free/Lite (< 350ms TTFT), gemini-2.5-flash for Pro/Core (4k-8k thinking), gemini-2.5-pro for Max/Apex (32k-64k thinking)",
     )
     specialized_model_lite: str = Field(
         default="gemini-2.0-flash-lite",
@@ -417,7 +417,10 @@ class Settings(BaseSettings):
 
     # ── Thinking Mode (Low | Medium | High | Max) ────────────────────────
     # Reasoning token budgets handed to thinking-capable providers.
-    thinking_budget_low: int = Field(default=2048, ge=0, le=65535)
+    thinking_budget_low: int = Field(
+        default=1024, ge=0, le=65535,
+        description="Thinking budget for Low level. Keep low for Lite tier TTFT < 350ms",
+    )
     thinking_budget_medium: int = Field(default=8192, ge=0, le=65535)
     thinking_budget_high: int = Field(default=24576, ge=0, le=65535)
     thinking_budget_max: int = Field(default=65535, ge=0, le=65535)
@@ -438,6 +441,9 @@ class Settings(BaseSettings):
             "gemini-3.6-flash": 0.30,
             "gemini-3.5-flash": 0.20,
             "gemini-3.5-flash-lite": 0.10,
+            "gemini-2.0-flash-lite": 0.075,
+            "gemini-2.5-flash": 0.30,
+            "gemini-2.5-pro": 1.25,
         },
         description="Input price in USD per million tokens, keyed by model name.",
     )
@@ -448,6 +454,9 @@ class Settings(BaseSettings):
             "gemini-3.6-flash": 0.90,
             "gemini-3.5-flash": 0.60,
             "gemini-3.5-flash-lite": 0.30,
+            "gemini-2.0-flash-lite": 0.30,
+            "gemini-2.5-flash": 1.50,
+            "gemini-2.5-pro": 5.00,
         },
         description="Output price in USD per million tokens, keyed by model name.",
     )
@@ -458,6 +467,9 @@ class Settings(BaseSettings):
             "gemini-3.6-flash": 1.80,
             "gemini-3.5-flash": 1.20,
             "gemini-3.5-flash-lite": 0.60,
+            "gemini-2.0-flash-lite": 0.00,
+            "gemini-2.5-flash": 3.50,
+            "gemini-2.5-pro": 10.00,
         },
         description="Thinking/reasoning price in USD per million tokens, keyed by model name.",
     )
@@ -478,6 +490,10 @@ class Settings(BaseSettings):
     embedding_dimension: int = Field(
         default=768,
         description="Embedding vector dimension (768 standard for Google text-embedding-004, or 384 / 1536 / 3072 via MRL)",
+    )
+    voyage_api_key: str | None = Field(
+        default=None,
+        description="Voyage AI API key for voyage-3 / voyage-3-large embeddings",
     )
 
     # ── Qdrant (Primary Vector Database) ────────────────────────────────
@@ -1201,6 +1217,14 @@ class Settings(BaseSettings):
         ge=0,
         le=10,
         description="Maximum validate-and-repair iterations for the highest tier (research ceiling is 10; tier policies cap lower)",
+    )
+    enable_apex_moa: bool = Field(
+        default=True,
+        description="Enable Mixture-of-Agents verification pipeline for Apex/Max tier IaC bundles (auditor + synthesizer)",
+    )
+    iac_opa_sandbox_enabled: bool = Field(
+        default=True,
+        description="Run opa test sandbox during bundle validation when .rego policy files are present",
     )
 
     # ── Cloud Provider Credentials ──────────────────────────────────────
