@@ -123,4 +123,4 @@ async def test_emit_event_receives_additive_events(monkeypatch):
 
     await run_iac_repair_loop("q", BAD_TERRAFORM, [], gen, "Max", _settings(), emit_event=emit)
     assert any("iac_validation" in e for e in events)
-    assert all(set(e.keys()) <= {"iac_validation", "iac_repair", "stage", "status"} for e in events)
+    assert all(set(e.keys()) <= {"iac_validation", "iac_repair", "stage", "status", "label"} for e in events)
