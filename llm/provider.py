@@ -246,6 +246,10 @@ class GeminiProvider(LLMProvider):
         self.last_usage: dict[str, int | None] = {"prompt_tokens": None, "total_tokens": None}
         logger.info("GeminiProvider initialized: models=%s", self.model_chain)
 
+    @property
+    def models(self) -> list[str]:
+        return self.model_chain
+
     def _get_active_candidates(self, start_model: str | None = None) -> list[str]:
         """Return ordered candidates starting from start_model, filtering out
         models currently in circuit-breaker cooldown unless all are in cooldown."""

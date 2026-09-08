@@ -51,9 +51,14 @@ def test_specialization_disabled_uses_uniform_model():
     settings = _make_settings(enable_tier_model_specialization=False)
     with patch("llm.provider.get_settings", return_value=settings):
         from llm.provider import get_llm_provider
-        for tier in ("Free", "Pro", "Max"):
+        expected_by_tier = {
+            "Free": settings.gemini_model_lite,
+            "Pro": settings.gemini_model_core,
+            "Max": settings.gemini_model_apex,
+        }
+        for tier, expected in expected_by_tier.items():
             provider = get_llm_provider("main", tier)
-            assert provider.models[0] == settings.gemini_model_lite if tier == "Free" else True
+            assert provider.models[0] == expected
 
 
 def test_specialization_pricing_entries_present():
