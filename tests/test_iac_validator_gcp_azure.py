@@ -147,7 +147,7 @@ def test_validate_artifact_triggers_gcp_guardrails():
     }
     """
     result = validate_artifact(content, artifact_type="terraform")
-    gcp_layer = next((l for l in result.layers if l.name == "gcp-integrity-guardrails"), None)
+    gcp_layer = next((layer for layer in result.layers if layer.name == "gcp-integrity-guardrails"), None)
     assert gcp_layer is not None
     assert gcp_layer.status == "failed"
     assert any(f.code == "gcs.missing_public_access_prevention" for f in gcp_layer.findings)
@@ -171,7 +171,7 @@ def test_validate_bundle_triggers_azure_guardrails():
         }
     ]
     result = validate_bundle(artifacts)
-    azure_layer = next((l for l in result.layers if l.name == "azure-integrity-guardrails"), None)
+    azure_layer = next((layer for layer in result.layers if layer.name == "azure-integrity-guardrails"), None)
     assert azure_layer is not None
     assert azure_layer.status == "failed"
     assert any(f.code == "storage.public_blob" for f in azure_layer.findings)

@@ -1,15 +1,12 @@
 """Task 8: Test OPA sandbox execution during IaC validation."""
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from config import get_settings
 from tools.iac_validator import (
-    LayerResult,
     _run_opa_sandbox,
-    validate_artifact,
     validate_bundle,
 )
 
@@ -82,7 +79,7 @@ def test_validate_bundle_includes_opa_sandbox():
          patch("subprocess.run", return_value=mock_proc):
 
         res = validate_bundle(artifacts)
-        sandbox_layer = next((l for l in res.layers if l.name == "opa-sandbox"), None)
+        sandbox_layer = next((layer for layer in res.layers if layer.name == "opa-sandbox"), None)
         assert sandbox_layer is not None
         assert sandbox_layer.status == "passed"
 
@@ -101,5 +98,5 @@ def test_validate_bundle_skips_sandbox_when_disabled():
     settings = get_settings()
     with patch.object(settings, "iac_opa_sandbox_enabled", False):
         res = validate_bundle(artifacts)
-        sandbox_layer = next((l for l in res.layers if l.name == "opa-sandbox"), None)
+        sandbox_layer = next((layer for layer in res.layers if layer.name == "opa-sandbox"), None)
         assert sandbox_layer is None

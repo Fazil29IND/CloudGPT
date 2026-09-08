@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from types import ModuleType
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from config import Settings
 from embeddings.embedding_engine import EmbeddingEngine

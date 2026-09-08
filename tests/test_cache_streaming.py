@@ -16,7 +16,11 @@ async def test_exact_cache_hit_returns_clean_string():
         "model": "exact-cache",
     }
 
-    with patch("api.chat_routes.get_cached_answer", new_callable=AsyncMock) as mock_get_cache:
+    with patch("api.chat_routes.get_cached_answer", new_callable=AsyncMock) as mock_get_cache, \
+         patch("api.chat_routes.pipeline.get_embeddings") as mock_get_embed:
+        mock_embedder = MagicMock()
+        mock_embedder.embed_query = AsyncMock(return_value=[0.1] * 768)
+        mock_get_embed.return_value = mock_embedder
         mock_get_cache.return_value = cached_payload
 
         res = await execute_agent_pipeline(
@@ -43,7 +47,12 @@ async def test_semantic_cache_hit_returns_clean_string():
     mock_sem_cache.get.return_value = ("canonical-query-key", 0.98)
 
     with patch("api.chat_routes.get_cached_answer", new_callable=AsyncMock) as mock_get_cache, \
-         patch("api.chat_routes.get_semantic_cache", return_value=mock_sem_cache):
+         patch("api.chat_routes.get_semantic_cache", return_value=mock_sem_cache), \
+         patch("api.chat_routes.pipeline.get_embeddings") as mock_get_embed:
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_query = AsyncMock(return_value=[0.1] * 768)
+        mock_get_embed.return_value = mock_embedder
 
         # First call (exact cache) returns None, second call (semantic cache key) returns cached_payload
         mock_get_cache.side_effect = [None, cached_payload]
