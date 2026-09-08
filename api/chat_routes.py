@@ -1502,8 +1502,7 @@ async def execute_agent_pipeline(
                 CACHE_CASCADE_HITS.labels(tier="Free", layer="exact").inc()
                 logger.info("exact_cache.hit", query=query[:60])
                 if isinstance(_exact_ans, dict):
-                    raw_exact = _exact_ans.get("answer", "")
-                    ans_text = str(raw_exact.get("answer", "") if isinstance(raw_exact, dict) else (raw_exact or ""))
+                    ans_text = str(_exact_ans.get("answer", "") or "")
                     ans_sources = _exact_ans.get("sources", []) if isinstance(_exact_ans.get("sources"), list) else []
                     ans_model = str(_exact_ans.get("model", "exact-cache") or "exact-cache")
                 else:
@@ -1555,8 +1554,7 @@ async def execute_agent_pipeline(
                         ).inc()
                         logger.info("semantic_cache.hit", similarity=round(sim, 3), query=query[:60])
                         if isinstance(cached_ans, dict):
-                            raw_ans = cached_ans.get("answer", "")
-                            ans_text = str(raw_ans.get("answer", "") if isinstance(raw_ans, dict) else (raw_ans or ""))
+                            ans_text = str(cached_ans.get("answer", "") or "")
                             ans_sources = cached_ans.get("sources", []) if isinstance(cached_ans.get("sources"), list) else []
                             ans_model = str(cached_ans.get("model", "semantic-cache") or "semantic-cache")
                         else:
@@ -1632,6 +1630,7 @@ async def execute_agent_pipeline(
                 # Feedback-driven policy: validation-failed answers are never cached.
                 _cache_ok = not skip_answer_cache_for_validation(res.validation, pipeline.settings)
                 if res.answer and not stream and _cache_ok:
+                    logger.debug("agenticrag.cache_write", query=query[:60])
                     await set_cached_answer(
                         query=query,
                         response_payload={"answer": res.answer, "sources": res.sources, "model": res.model_used},

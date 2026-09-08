@@ -111,12 +111,14 @@ def extract_artifacts_from_text(text: str) -> list[dict[str, Any]]:
         for a_match in art_pattern.finditer(b_body):
             a_attrs = a_match.group(1)
             content = a_match.group(2).strip()
-            fn_match = re.search(r'\b(?:filename|file)=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
+            fn_match = re.search(r'\b(?:filename|file|identifier)=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
             title_match = re.search(r'\btitle=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
             lang_match = re.search(r'\b(?:language|lang)=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
+            type_match = re.search(r'\b(?:artifact_type|type)=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
             filename = fn_match.group(1) if fn_match else "artifact.txt"
             title = title_match.group(1) if title_match else filename
             language = lang_match.group(1) if lang_match else ""
+            artifact_type = type_match.group(1) if type_match else ""
 
             if filename in seen_filenames or not content:
                 continue
@@ -125,6 +127,8 @@ def extract_artifacts_from_text(text: str) -> list[dict[str, Any]]:
                 "filename": filename,
                 "title": title,
                 "language": language,
+                "artifact_type": artifact_type,
+                "type": artifact_type,
                 "content": content,
                 "bundle_id": bundle_id,
                 "bundle_title": bundle_title,
@@ -135,12 +139,14 @@ def extract_artifacts_from_text(text: str) -> list[dict[str, Any]]:
     for a_match in standalone_pattern.finditer(text):
         a_attrs = a_match.group(1)
         content = a_match.group(2).strip()
-        fn_match = re.search(r'\b(?:filename|file)=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
+        fn_match = re.search(r'\b(?:filename|file|identifier)=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
         title_match = re.search(r'\btitle=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
         lang_match = re.search(r'\b(?:language|lang)=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
+        type_match = re.search(r'\b(?:artifact_type|type)=["\']([^"\']+)["\']', a_attrs, re.IGNORECASE)
         filename = fn_match.group(1) if fn_match else "artifact.txt"
         title = title_match.group(1) if title_match else filename
         language = lang_match.group(1) if lang_match else ""
+        artifact_type = type_match.group(1) if type_match else ""
 
         if filename in seen_filenames or not content:
             continue
@@ -149,6 +155,8 @@ def extract_artifacts_from_text(text: str) -> list[dict[str, Any]]:
             "filename": filename,
             "title": title,
             "language": language,
+            "artifact_type": artifact_type,
+            "type": artifact_type,
             "content": content,
             "bundle_id": None,
             "bundle_title": None,

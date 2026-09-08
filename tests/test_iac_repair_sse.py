@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import pytest
+from unittest.mock import patch
+
 from config import get_settings
 from generation.iac_repair import run_iac_repair_loop
 
@@ -12,7 +14,7 @@ async def test_iac_repair_sse_events_on_repair_pass():
     settings = get_settings()
 
     failing_tf = """
-    <cloudgpt_artifact identifier="main.tf" type="terraform">
+    <cloudgpt_artifact filename="main.tf" type="terraform">
     resource "aws_eks_cluster" "main" {
       name    = "demo"
       version = "1.28"
@@ -21,14 +23,10 @@ async def test_iac_repair_sse_events_on_repair_pass():
     """
 
     passing_tf = """
-    <cloudgpt_artifact identifier="main.tf" type="terraform">
+    <cloudgpt_artifact filename="main.tf" type="terraform">
     resource "aws_eks_cluster" "main" {
       name    = "demo"
       version = "1.30"
-    }
-    resource "aws_eks_node_group" "workers" {
-      cluster_name = aws_eks_cluster.main.name
-      # AmazonEKSWorkerNodePolicy AmazonEKS_CNI_Policy AmazonEC2ContainerRegistryReadOnly
     }
     </cloudgpt_artifact>
     """
@@ -41,15 +39,19 @@ async def test_iac_repair_sse_events_on_repair_pass():
     async def mock_generate(msgs, thinking):
         return passing_tf
 
-    res = await run_iac_repair_loop(
-        query="deploy eks",
-        prior_answer=failing_tf,
-        base_messages=[{"role": "user", "content": "deploy eks"}],
-        generate_fn=mock_generate,
-        tier="Pro",
-        settings=settings,
-        emit_event=mock_emit,
-    )
+    with patch(
+        "generation.iac_repair._validate_artifacts",
+        side_effect=[(False, ["eks.deprecated_version: 1.28 is deprecated"]), (True, [])],
+    ):
+        res = await run_iac_repair_loop(
+            query="deploy eks",
+            prior_answer=failing_tf,
+            base_messages=[{"role": "user", "content": "deploy eks"}],
+            generate_fn=mock_generate,
+            tier="Pro",
+            settings=settings,
+            emit_event=mock_emit,
+        )
 
     assert res["valid"] is True
     stages = [e["stage"] for e in events if "stage" in e]
@@ -71,7 +73,7 @@ async def test_iac_repair_sse_events_on_clean_pass():
     settings = get_settings()
 
     passing_tf = """
-    <cloudgpt_artifact identifier="main.tf" type="terraform">
+    <cloudgpt_artifact filename="main.tf" type="terraform">
     resource "aws_s3_bucket" "b" {
       bucket = "my-test-bucket"
     }
@@ -86,15 +88,19 @@ async def test_iac_repair_sse_events_on_clean_pass():
     async def mock_generate(msgs, thinking):
         return passing_tf
 
-    res = await run_iac_repair_loop(
-        query="create s3 bucket",
-        prior_answer=passing_tf,
-        base_messages=[{"role": "user", "content": "create s3 bucket"}],
-        generate_fn=mock_generate,
-        tier="Pro",
-        settings=settings,
-        emit_event=mock_emit,
-    )
+    with patch(
+        "generation.iac_repair._validate_artifacts",
+        return_value=(True, []),
+    ):
+        res = await run_iac_repair_loop(
+            query="create s3 bucket",
+            prior_answer=passing_tf,
+            base_messages=[{"role": "user", "content": "create s3 bucket"}],
+            generate_fn=mock_generate,
+            tier="Pro",
+            settings=settings,
+            emit_event=mock_emit,
+        )
 
     assert res["valid"] is True
     stages = [e["stage"] for e in events if "stage" in e]

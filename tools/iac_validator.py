@@ -221,6 +221,57 @@ def _parse_cfn_lint(stdout: str, _stderr: str) -> list[Finding]:
         return []
 
 
+def _parse_opa_test(stdout: str, stderr: str) -> list[Finding]:
+    """Parse failures from opa test output into structured findings."""
+    findings: list[Finding] = []
+    combined = (stdout or "") + "\n" + (stderr or "")
+    for line in combined.splitlines():
+        line_str = line.strip()
+        if not line_str:
+            continue
+        if "FAIL" in line_str or "ERROR" in line_str or "error:" in line_str.lower():
+            findings.append(Finding(
+                code="opa.test_failure",
+                message=line_str[:300],
+                severity="high",
+            ))
+    return findings[:30]
+
+
+def _run_opa_sandbox(rego_files: dict[str, str], workdir: Path, timeout: float) -> LayerResult:
+    """Execute opa test sandbox for rego policy validation."""
+    if not _binary_available("opa"):
+        return LayerResult(name="opa-sandbox", status="skipped", detail="opa not installed")
+
+    # Check if any explicit test files exist
+    has_explicit_tests = any(
+        fn.endswith(("_test.rego", ".test.rego")) or Path(fn).name.startswith("test_")
+        for fn in rego_files
+    )
+
+    if not has_explicit_tests:
+        # Synthesize a policy compilation smoke test file for each package
+        packages_seen = set()
+        for r_fn, r_cnt in rego_files.items():
+            m = re.search(r"^\s*package\s+([a-zA-Z0-9_.]+)", r_cnt, re.MULTILINE)
+            pkg = m.group(1) if m else "main"
+            if pkg in packages_seen:
+                continue
+            packages_seen.add(pkg)
+            test_content = (
+                f"package {pkg}\n\n"
+                f"import rego.v1\n\n"
+                f"test_policy_compilation if {{\n"
+                f"    true\n"
+                f"}}\n"
+            )
+            safe_name = f"test_sandbox_{pkg.replace('.', '_')}.rego"
+            (workdir / safe_name).write_text(test_content, encoding="utf-8")
+
+    cmd = ["opa", "test", str(workdir), "-v"]
+    return _run_layer("opa-sandbox", cmd, workdir, timeout, _parse_opa_test)
+
+
 # ── Static Integrity Checkers ──────────────────────────────────────────────────
 
 def check_static_rego_rules(content: str) -> LayerResult:
@@ -450,6 +501,8 @@ def validate_artifact(content: str, artifact_type: str | None = None, timeout_se
                 workdir, timeout, _parse_generic_lines,
             ))
             layers.append(check_static_rego_rules(content))
+            if getattr(settings, "iac_opa_sandbox_enabled", True):
+                layers.append(_run_opa_sandbox({file_name: content}, workdir, timeout))
         elif kind == "cloudformation":
             layers.append(_run_layer(
                 "cfn-lint",
@@ -559,6 +612,8 @@ def validate_bundle(artifacts: list[dict[str, Any]], timeout_seconds: float | No
                 r_path = workdir / r_fn
                 layers.append(_run_layer("opa-check", ["opa", "check", "--strict", str(r_path)], workdir, timeout, _parse_generic_lines))
                 layers.append(check_static_rego_rules(r_cnt))
+            if getattr(settings, "iac_opa_sandbox_enabled", True):
+                layers.append(_run_opa_sandbox(rego_files, workdir, timeout))
 
         # 3. K8s layers
         if k8s_files:

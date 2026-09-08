@@ -1806,6 +1806,28 @@ class AdaptiveAdvancedRAGPipeline:
             validation_out=validation_out,
         )
 
+        # Stage 5 (Apex MoA Verification) — Generator → Security Auditor → Synthesizer
+        if (
+            not stream
+            and isinstance(answer_or_stream, str)
+            and getattr(self.settings, "enable_apex_moa", True)
+            and str(tier).lower() in ("max", "apex", "developer", "admin")
+            and ("<cloudgpt_bundle" in answer_or_stream or "<cloudgpt_artifact" in answer_or_stream)
+        ):
+            try:
+                from generation.moa_pipeline import run_moa_verification
+
+                moa_res = await run_moa_verification(
+                    bundle_text=answer_or_stream,
+                    query=query,
+                    tier=tier,
+                    emit_event=emit_event,
+                    settings=self.settings,
+                )
+                answer_or_stream = moa_res.final_bundle
+            except Exception as moa_err:
+                logger.warning("adaptive_rag.moa_verification_failed", error=str(moa_err))
+
         # Apex answer-cache write — permitted only when the adaptive cache
         # router allows it, no attachments are present, and Layer-4 validation
         # did not flag the answer.
