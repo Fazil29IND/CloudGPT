@@ -354,7 +354,8 @@ class Settings(BaseSettings):
         default=0.7,
         ge=0.0,
         le=2.0,
-        description="Sampling temperature for main answer generation.",
+        description="Upper bound for main answer sampling temperature. Tier policy may use a lower value "
+                    "for factual consistency; lower this setting to make all tiers more deterministic.",
     )
     temperature_evaluator: float = Field(
         default=0.1,

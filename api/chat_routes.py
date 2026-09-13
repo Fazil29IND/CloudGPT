@@ -496,11 +496,19 @@ async def generate_with_fallback(
     if temperature is None:
         _t = (tier or "Free").strip().lower()
         if _t in ("max", "apex", "developer", "admin"):
-            temperature = 0.20
+            tier_temperature = 0.20
         elif _t in ("pro", "core"):
-            temperature = 0.15
+            tier_temperature = 0.15
         else:
-            temperature = 0.10
+            tier_temperature = 0.10
+
+        # Keep the established tier calibration as the quality floor while
+        # honoring the operator's generation-temperature safety ceiling.
+        configured_temperature = getattr(pipeline.settings, "temperature_generation", 0.7)
+        try:
+            temperature = min(tier_temperature, max(0.0, float(configured_temperature)))
+        except (TypeError, ValueError):
+            temperature = tier_temperature
 
     try:
         llm = pipeline.get_main_llm(tier)
@@ -3117,6 +3125,7 @@ async def delete_user_memory_endpoint(memory_id: int, request: Request) -> dict[
     return {"success": True}
 
 
+
 @router.delete("/user/memory")
 async def clear_all_user_memory(request: Request) -> dict[str, Any]:
     """Clear all durable memory preferences for current user."""
@@ -3192,5 +3201,3 @@ async def update_user_preference(data: UpdatePreferenceRequest, request: Request
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update preference")
     return {"success": True}
-
-
