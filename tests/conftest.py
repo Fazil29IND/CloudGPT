@@ -29,6 +29,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://postgres:Fazil@localhost:500
 # pure flakiness for hermetic tests — single-threaded BLAS is enough here.
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("ENABLE_TIER_MODEL_SPECIALIZATION", "true")
 
 
 @pytest.fixture(scope="session")

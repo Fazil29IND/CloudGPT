@@ -210,56 +210,88 @@ def _patch_factory_providers(gemini=True):
 def test_lite_tier_uses_gemini_flash_chain():
     from llm.provider import get_llm_provider
 
+    settings = get_settings()
     with _patch_factory_providers(gemini=True):
         provider = get_llm_provider("main", "Free")
     assert type(provider).__name__ == "StubGemini"
-    # Primary Lite model is Gemini 3.8 Flash with fallback chain
-    assert provider.kwargs["models"][0] == get_settings().gemini_model_lite
-    assert provider.kwargs["models"] == [
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
+    expected_primary = (
+        settings.specialized_model_lite
+        if getattr(settings, "enable_tier_model_specialization", False)
+        else settings.gemini_model_lite
+    )
+    assert provider.kwargs["models"][0] == expected_primary
+    expected_chain = [
+        m for m in [
+            expected_primary,
+            settings.gemini_model_fallback_1,
+            settings.gemini_model_fallback_2,
+            settings.gemini_model_fallback_3,
+        ] if m
     ]
+    assert provider.kwargs["models"] == expected_chain
 
 
 def test_core_tier_uses_gemini_flash():
     from llm.provider import get_llm_provider
 
+    settings = get_settings()
     with _patch_factory_providers(gemini=True):
         provider = get_llm_provider("main", "Pro")
     assert type(provider).__name__ == "StubGemini"
-    assert provider.kwargs["models"][0] == get_settings().gemini_model_core
-    assert provider.kwargs["models"] == [
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
+    expected_primary = (
+        settings.specialized_model_core
+        if getattr(settings, "enable_tier_model_specialization", False)
+        else settings.gemini_model_core
+    )
+    assert provider.kwargs["models"][0] == expected_primary
+    expected_chain = [
+        m for m in [
+            expected_primary,
+            settings.gemini_model_fallback_1,
+            settings.gemini_model_fallback_2,
+            settings.gemini_model_fallback_3,
+        ] if m
     ]
+    assert provider.kwargs["models"] == expected_chain
 
 
 def test_apex_tier_uses_gemini_flash():
     from llm.provider import get_llm_provider
 
+    settings = get_settings()
     with _patch_factory_providers(gemini=True):
         provider = get_llm_provider("main", "Max")
     assert type(provider).__name__ == "StubGemini"
-    assert provider.kwargs["models"][0] == get_settings().gemini_model_apex
-    assert provider.kwargs["models"] == [
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
+    expected_primary = (
+        settings.specialized_model_apex
+        if getattr(settings, "enable_tier_model_specialization", False)
+        else settings.gemini_model_apex
+    )
+    assert provider.kwargs["models"][0] == expected_primary
+    expected_chain = [
+        m for m in [
+            expected_primary,
+            settings.gemini_model_fallback_1,
+            settings.gemini_model_fallback_2,
+            settings.gemini_model_fallback_3,
+        ] if m
     ]
+    assert provider.kwargs["models"] == expected_chain
 
 
 def test_apex_falls_back_to_gemini():
     from llm.provider import get_llm_provider
 
+    settings = get_settings()
     with _patch_factory_providers(gemini=True):
         provider = get_llm_provider("main", "Apex")
     assert type(provider).__name__ == "StubGemini"
-    assert provider.kwargs["models"][0] == get_settings().gemini_model_apex
+    expected_primary = (
+        settings.specialized_model_apex
+        if getattr(settings, "enable_tier_model_specialization", False)
+        else settings.gemini_model_apex
+    )
+    assert provider.kwargs["models"][0] == expected_primary
 
 
 def test_lite_raises_when_every_provider_is_unavailable():
@@ -597,7 +629,10 @@ def test_knowledge_corpus_chunks_carry_senior_metadata():
         assert chunks, f"namespace {namespace} produced no chunks"
         for chunk in chunks:
             assert chunk["metadata"]["difficulty_tier"] == "senior"
-            assert chunk["metadata"]["domain"] in ("architecture", "troubleshooting", "iac", "finops", "cli", "security")
+            assert chunk["metadata"]["domain"] in (
+                "architecture", "troubleshooting", "iac", "finops", "cli", "security",
+                "storage", "ai", "kubernetes", "compute", "database", "serverless", "networking",
+            )
             assert chunk["chunk_id"].startswith("kb-")
 
 
